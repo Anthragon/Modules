@@ -34,7 +34,6 @@ pub fn init() callconv(.c) bool {
     root.devices.disk.get_disk_by_idx(0).?.read(0, &buf) catch unreachable;
     debug.dumpHex(&buf);
 
-    debug.print("Returning...\n", .{});
     return true;
 }
 pub fn deinit() callconv(.c) void {
