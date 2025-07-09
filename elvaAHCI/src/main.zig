@@ -25,14 +25,16 @@ pub fn init() callconv(.c) bool {
         .endOfChain()
     };
 
-    debug.print("Probing PCI devices...\n", .{});
+    debug.err("Probing PCI devices...\n", .{});
     pci.pci_device_probe(query, device_probe);
 
+    debug.print("\nlisting mass-storage devices:\n", .{});
     root.devices.disk.lsblk();
+    debug.print("\n", .{});
 
     var buf: [512]u8 = undefined;
     root.devices.disk.get_disk_by_idx(0).?.read(0, &buf) catch unreachable;
-    debug.dumpHex(&buf);
+    debug.dumpHexErr(&buf);
 
     return true;
 }
@@ -45,7 +47,7 @@ pub fn device_probe(dev: *PciDevice) callconv(.c) bool {
     // assign the correct names to it
     name_device(dev);
 
-    debug.print("Probing PCI device: {X:0>2}:{X:0>2}.{X:0>1} [{X:0>2}:{X:0>2}] {s}\n", .{
+    debug.err("Probing PCI device: {X:0>2}:{X:0>2}.{X:0>1} [{X:0>2}:{X:0>2}] {s}\n", .{
         dev.get_bus(),
         dev.get_device(),
         dev.get_function(),
@@ -55,7 +57,7 @@ pub fn device_probe(dev: *PciDevice) callconv(.c) bool {
     });
     
     const bar_info = dev.addr.barinfo(5);
-    debug.print("Bar info: ptr: {X}, size: {} bytes\n", .{bar_info.phy, bar_info.size});
+    debug.err("Bar info: ptr: {X}, size: {} bytes\n", .{bar_info.phy, bar_info.size});
     const bar_size_aligned = std.mem.alignForward(usize, bar_info.size, sys.pmm.page_size);
 
     const allocation = root.mem.heap.kernel_page_allocator.request_space(bar_size_aligned);
@@ -72,7 +74,7 @@ pub fn device_probe(dev: *PciDevice) callconv(.c) bool {
     catch |err| {
         // Mapping error! free the allocation and return false
         root.mem.heap.kernel_page_allocator.free_space(bar_info.size);
-        root.debug.print("Error! {s}\n", .{ @errorName(err) });
+        root.debug.err("Error! {s}\n", .{ @errorName(err) });
         return false;
     };
 
@@ -95,7 +97,7 @@ pub fn find_cmdslot(port: *HBAPort, cmdslots: usize) isize {
 
 fn iterate_ports(abar: *HBAMem) void {
 
-    debug.print("Iterate though aHCI ports...\n", .{});
+    debug.err("Iterate though aHCI ports...\n", .{});
 
     // Search disk in implemented ports
     var pi: u32 = abar.pi;
