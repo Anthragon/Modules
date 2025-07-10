@@ -60,7 +60,7 @@ pub fn device_probe(dev: *PciDevice) callconv(.c) bool {
     debug.err("Bar info: ptr: {X}, size: {} bytes\n", .{bar_info.phy, bar_info.size});
     const bar_size_aligned = std.mem.alignForward(usize, bar_info.size, sys.pmm.page_size);
 
-    const allocation = root.mem.heap.kernel_page_allocator.request_space(bar_size_aligned);
+    const allocation = root.mem.heap.kernel_page_allocator.reserve(bar_size_aligned);
 
     // Remapping pages
     root.system.mem_paging.map_range(bar_info.phy, allocation, bar_size_aligned, .{
