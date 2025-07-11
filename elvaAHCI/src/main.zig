@@ -16,6 +16,7 @@ pub const module_name: [*:0]const u8 =     "elvaAHCI";
 pub const module_version: [*:0]const u8 =  "0.1.0";
 pub const module_author: [*:0]const u8 =   "System Elva Team";
 pub const module_liscence: [*:0]const u8 = "MPL-2.0";
+pub const module_uuid: u128 = @bitCast(root.utils.Guid.fromString("37df8d37-d77c-4f86-bb99-514b542b23da") catch unreachable);
 
 pub fn init() callconv(.c) bool {
     debug.print("Hello, elvaAHCI!\n", .{});
@@ -60,7 +61,7 @@ pub fn device_probe(dev: *PciDevice) callconv(.c) bool {
     debug.err("Bar info: ptr: {X}, size: {} bytes\n", .{bar_info.phy, bar_info.size});
     const bar_size_aligned = std.mem.alignForward(usize, bar_info.size, sys.pmm.page_size);
 
-    const allocation = root.mem.heap.kernel_page_allocator.reserve(bar_size_aligned);
+    const allocation = root.mem.heap.kernel_page_allocator.reserve(bar_size_aligned, .@"1");
 
     // Remapping pages
     root.system.mem_paging.map_range(bar_info.phy, allocation, bar_size_aligned, .{
@@ -73,7 +74,7 @@ pub fn device_probe(dev: *PciDevice) callconv(.c) bool {
     })
     catch |err| {
         // Mapping error! free the allocation and return false
-        root.mem.heap.kernel_page_allocator.free_space(bar_info.size);
+        root.mem.heap.kernel_page_allocator.free(allocation);
         root.debug.err("Error! {s}\n", .{ @errorName(err) });
         return false;
     };
