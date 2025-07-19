@@ -26,7 +26,7 @@ const find_cmdslot = main.find_cmdslot;
 
 pub fn init_disk(abar: *HBAMem, port: *HBAPort) !void {
 
-    debug.err("Initializing disk...\n", .{});
+    std.log.debug("Initializing disk...\n", .{});
 
     stop_cmd(port);
     start_cmd(port);
@@ -187,7 +187,7 @@ fn read_sata(ctx: *anyopaque, sector: u64, buffer: [*]u8, len: usize) callconv(.
     while ((port.tfd & (0x88) != 0) and spin < 1000000) : (spin += 1) {}
 
     if (spin == 1000000) {
-        debug.err("Port is hung\n", .{});
+        std.log.debug("Port is hung\n", .{});
         return false;
     }
 
@@ -198,11 +198,11 @@ fn read_sata(ctx: *anyopaque, sector: u64, buffer: [*]u8, len: usize) callconv(.
         if ((port.ci & std.math.shl(u32, 1, slot)) == 0) break;
 
         if (timeout >= (1 << 16)) {
-            debug.err("Timeout\n", .{});
+            std.log.debug("Timeout\n", .{});
             return false;
         }
         if ((port.is & (1 << 30)) != 0) {
-           debug.err("Read disk error\n", .{});
+           std.log.debug("Read disk error\n", .{});
            return false;
         }
     }

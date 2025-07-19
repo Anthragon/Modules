@@ -17,7 +17,7 @@ pub const module_liscence: [*:0]const u8 = "MPL-2.0";
 pub const module_uuid: u128 = @bitCast(root.utils.Guid.fromString("eb896ec0-46ef-4996-a8ef-c82c4ac9f05f") catch unreachable);
 
 pub fn init() callconv(.c) bool {
-    debug.print("Hello, elvaDisk!\n", .{});
+    std.log.info("Hello, elvaDisk!\n", .{});
 
     return true;
 }
