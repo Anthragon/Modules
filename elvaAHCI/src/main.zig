@@ -11,18 +11,18 @@ const allocator = root.mem.heap.kernel_buddy_allocator;
 const sata = @import("sata.zig");
 
 // Module information
-pub const module_name: [*:0]const u8 =     "elvaAHCI";
-pub const module_version: [*:0]const u8 =  "0.1.0";
-pub const module_author: [*:0]const u8 =   "System Elva Team";
+pub const module_name: [*:0]const u8 = "elvaAHCI";
+pub const module_version: [*:0]const u8 = "0.1.0";
+pub const module_author: [*:0]const u8 = "System Elva Team";
 pub const module_liscence: [*:0]const u8 = "MPL-2.0";
 pub const module_uuid: u128 = @bitCast(root.utils.Guid.fromString("37df8d37-d77c-4f86-bb99-514b542b23da") catch unreachable);
 
 pub fn init() callconv(.c) bool {
     std.log.info("Hello, elvaAHCI!\n", .{});
 
-    const query: [*]const pci.PciDeviceQuery = &[_]pci.PciDeviceQuery {
+    const query: [*]const pci.PciDeviceQuery = &[_]pci.PciDeviceQuery{
         .byClass(0x01, 0x06, 0), // SATA controller class
-        .endOfChain()
+        .endOfChain(),
     };
 
     std.log.debug("Probing PCI devices...\n", .{});
@@ -34,13 +34,11 @@ pub fn init() callconv(.c) bool {
 
     var buf: [512]u8 = undefined;
     root.devices.disk.get_disk_by_idx(0).?.read(0, &buf) catch unreachable;
-    //debug.dumpHexErr(&buf);
+    root.debug.dumpHexErr(&buf);
 
     return true;
 }
-pub fn deinit() callconv(.c) void {
-
-}
+pub fn deinit() callconv(.c) void {}
 pub fn device_probe(dev: *PciDevice) callconv(.c) bool {
 
     // It will swith-case by the vendor and device to
@@ -55,26 +53,18 @@ pub fn device_probe(dev: *PciDevice) callconv(.c) bool {
         dev.addr.sub_class().read(),
         dev.name_str,
     });
-    
+
     const bar_info = dev.addr.barinfo(5);
-    std.log.debug("Bar info: ptr: {X}, size: {} bytes\n", .{bar_info.phy, bar_info.size});
+    std.log.debug("Bar info: ptr: {X}, size: {} bytes\n", .{ bar_info.phy, bar_info.size });
     const bar_size_aligned = std.mem.alignForward(usize, bar_info.size, sys.pmm.page_size);
 
     const allocation = root.mem.heap.kernel_page_allocator.reserve(bar_size_aligned, .@"1");
 
     // Remapping pages
-    root.system.mem_paging.map_range(bar_info.phy, allocation, bar_size_aligned, .{
-        .disable_cache = true,
-        .execute = false,
-        .privileged = true,
-        .read = true,
-        .write = true,
-        .lock = true
-    })
-    catch |err| {
+    root.system.mem_paging.map_range(bar_info.phy, allocation, bar_size_aligned, .{ .disable_cache = true, .execute = false, .privileged = true, .read = true, .write = true, .lock = true }) catch |err| {
         // Mapping error! free the allocation and return false
         root.mem.heap.kernel_page_allocator.free(allocation);
-        std.log.debug("Error! {s}\n", .{ @errorName(err) });
+        std.log.debug("Error! {s}\n", .{@errorName(err)});
         return false;
     };
 
@@ -96,31 +86,25 @@ pub fn find_cmdslot(port: *HBAPort, cmdslots: usize) isize {
 }
 
 fn iterate_ports(abar: *HBAMem) void {
-
     std.log.debug("Iterate though aHCI ports...\n", .{});
 
     // Search disk in implemented ports
     var pi: u32 = abar.pi;
     var i: usize = 0;
-    while (i < 32) : ({i += 1; pi >>= 1;}) {
-
-         if (pi & 1 != 0) {
-            
+    while (i < 32) : ({
+        i += 1;
+        pi >>= 1;
+    }) {
+        if (pi & 1 != 0) {
             const port = abar.ports(i);
             const dt = check_type(port);
             if (dt == .sata) {
                 std.log.debug("SATA drive found in port {}\n", .{i});
                 sata.init_disk(abar, port) catch std.log.debug("Error while initializing SATA\n", .{});
-            }
-            else if (dt == .satapi) std.log.debug("SATAPI drive found in port {}\n", .{i})
-            else if (dt == .semb) std.log.debug("SEMB drive found in port {}\n", .{i})
-            else if (dt == .pm) std.log.debug("PM drive found in port {}\n", .{i});
+            } else if (dt == .satapi) std.log.debug("SATAPI drive found in port {}\n", .{i}) else if (dt == .semb) std.log.debug("SEMB drive found in port {}\n", .{i}) else if (dt == .pm) std.log.debug("PM drive found in port {}\n", .{i});
         }
-
     }
-
 }
-
 
 fn check_type(port: *HBAPort) AHCIDevice {
     const ssts = port.ssts;
@@ -134,13 +118,11 @@ fn check_type(port: *HBAPort) AHCIDevice {
         0xEB140101 => .satapi,
         0xC33C0101 => .semb,
         0x96690101 => .pm,
-        else => .sata
+        else => .sata,
     };
 }
 
-
 fn name_device(dev: *PciDevice) void {
-
     dev.type_str = "SATA Controller";
     switch (dev.addr.vendor_id().read()) {
         else => |v| std.log.debug("Unknown vendor ID {X:0>4}", .{v}),
@@ -148,19 +130,15 @@ fn name_device(dev: *PciDevice) void {
         0x8086 => {
             dev.vendor_str = "Intel";
             switch (dev.addr.device_id().read()) {
-                else => |v| std.log.debug("Unknown device ID {X:0>4} from vendor {s}", .{v, dev.vendor_str}),
+                else => |v| std.log.debug("Unknown device ID {X:0>4} from vendor {s}", .{ v, dev.vendor_str }),
 
-                0x06d2,
-                0x02d3 => dev.name_str = "Comet Lake SATA AHCI Controller",
+                0x06d2, 0x02d3 => dev.name_str = "Comet Lake SATA AHCI Controller",
 
-                0x0f22,
-                0x0f23 => dev.name_str = "Atom Processor E3800 Series SATA AHCI Controller",
+                0x0f22, 0x0f23 => dev.name_str = "Atom Processor E3800 Series SATA AHCI Controller",
 
-                0x1bd2,
-                0x1bf2 => dev.name_str = "Sapphire Rapids SATA AHCI Controller",
+                0x1bd2, 0x1bf2 => dev.name_str = "Sapphire Rapids SATA AHCI Controller",
 
-                0x1c02,
-                0x1c03 => dev.name_str = "Intel 6 Series/C200 Series Chipset Family SATA AHCI Controller",
+                0x1c02, 0x1c03 => dev.name_str = "Intel 6 Series/C200 Series Chipset Family SATA AHCI Controller",
                 0x8c02 => dev.name_str = "Intel 8 Series/C220 Chipset Family SATA Controller 1 [AHCI mode]",
                 0x9c03 => dev.name_str = "Intel 9 Series Chipset Family SATA Controller [AHCI Mode]",
 
@@ -169,15 +147,13 @@ fn name_device(dev: *PciDevice) void {
                 0x1e02 => dev.name_str = "7 Series/C210 Series Chipset Family 6-port SATA Controller [AHCI mode]",
                 0x1e03 => dev.name_str = "7 Series Chipset Family 6-port SATA Controller [AHCI mode]",
 
-                0x1f22,
-                0x1f23 => dev.name_str = "Atom processor C2000 AHCI SATA2 Controller",
-                0x1f32,
-                0x1f33 => dev.name_str = "Atom processor C2000 AHCI SATA3 Controller",
+                0x1f22, 0x1f23 => dev.name_str = "Atom processor C2000 AHCI SATA2 Controller",
+                0x1f32, 0x1f33 => dev.name_str = "Atom processor C2000 AHCI SATA3 Controller",
 
                 0x22a4 => dev.name_str = "Atom/Celeron/Pentium Processor x5-E8000/J3xxx/N3xxx Series SATA AHCI Controller",
                 0x2323 => dev.name_str = "DH89xxCC 4 Port SATA AHCI Controller",
                 0x23a3 => dev.name_str = "DH895XCC Series 4-Port SATA Controller [AHCI Mode]",
-                
+
                 0x2681 => dev.name_str = "631xESB/632xESB SATA AHCI Controller",
 
                 0x27c1 => dev.name_str = "NM10/ICH7 Family SATA Controller [AHCI mode]",
@@ -194,65 +170,52 @@ fn name_device(dev: *PciDevice) void {
                 0x34de => dev.name_str = "Ice Lake-LP SATA Controller [AHCI mode]",
 
                 0x9c83 => dev.name_str = "Wildcat Point-LP SATA Controller [AHCI Mode]",
-
             }
         },
 
         0x1022 => {
             dev.vendor_str = "AMD";
             switch (dev.addr.device_id().read()) {
-                else => |v| std.log.debug("Unknown device ID {X:0>4} from vendor {s}", .{v, dev.vendor_str}),
+                else => |v| std.log.debug("Unknown device ID {X:0>4} from vendor {s}", .{ v, dev.vendor_str }),
 
                 0x7801 => dev.name_str = "AMD FCH SATA Controller [AHCI mode]",
-                0x4391 => dev.name_str = "AMD SB7x0/SB8x0/SB9x0 SATA Controller [AHCI mode]"
-
+                0x4391 => dev.name_str = "AMD SB7x0/SB8x0/SB9x0 SATA Controller [AHCI mode]",
             }
         },
 
         0x1b21 => {
             dev.vendor_str = "ASMedia Technology Inc.";
             switch (dev.addr.device_id().read()) {
-                else => |v| std.log.debug("Unknown device ID {X:0>4} from vendor {s}", .{v, dev.vendor_str}),
+                else => |v| std.log.debug("Unknown device ID {X:0>4} from vendor {s}", .{ v, dev.vendor_str }),
 
                 0x0612 => dev.name_str = "ASMedia ASM1062 Serial ATA Controller",
-                0x0611 => dev.name_str = "ASMedia ASM1061 SATA Controller"
-
+                0x0611 => dev.name_str = "ASMedia ASM1061 SATA Controller",
             }
         },
 
         0x1b4b => {
             dev.vendor_str = "Marvell Technology Group Ltd.";
             switch (dev.addr.device_id().read()) {
-                else => |v| std.log.debug("Unknown device ID {X:0>4} from vendor {s}", .{v, dev.vendor_str}),
+                else => |v| std.log.debug("Unknown device ID {X:0>4} from vendor {s}", .{ v, dev.vendor_str }),
 
                 0x9123 => dev.name_str = "Marvell 88SE9123 PCIe SATA 6 Gb/s Controller",
-                0x9230 => dev.name_str = "Marvell 88SE9230 PCIe SATA 6 Gb/s Controller"
-
+                0x9230 => dev.name_str = "Marvell 88SE9230 PCIe SATA 6 Gb/s Controller",
             }
         },
-
     }
-
 }
 
-
-pub const AHCIDevice = enum {
-    _null,
-    sata,
-    semb,
-    pm,
-    satapi
-};
+pub const AHCIDevice = enum { _null, sata, semb, pm, satapi };
 
 pub const FISType = enum(u8) {
-    FIS_TYPE_REG_H2D	= 0x27,	// Register FIS - host to device
-	FIS_TYPE_REG_D2H	= 0x34,	// Register FIS - device to host
-	FIS_TYPE_DMA_ACT	= 0x39,	// DMA activate FIS - device to host
-	FIS_TYPE_DMA_SETUP	= 0x41,	// DMA setup FIS - bidirectional
-	FIS_TYPE_DATA		= 0x46,	// Data FIS - bidirectional
-	FIS_TYPE_BIST		= 0x58,	// BIST activate FIS - bidirectional
-	FIS_TYPE_PIO_SETUP	= 0x5F,	// PIO setup FIS - device to host
-	FIS_TYPE_DEV_BITS	= 0xA1,	// Set device bits FIS - device to host
+    FIS_TYPE_REG_H2D = 0x27, // Register FIS - host to device
+    FIS_TYPE_REG_D2H = 0x34, // Register FIS - device to host
+    FIS_TYPE_DMA_ACT = 0x39, // DMA activate FIS - device to host
+    FIS_TYPE_DMA_SETUP = 0x41, // DMA setup FIS - bidirectional
+    FIS_TYPE_DATA = 0x46, // Data FIS - bidirectional
+    FIS_TYPE_BIST = 0x58, // BIST activate FIS - bidirectional
+    FIS_TYPE_PIO_SETUP = 0x5F, // PIO setup FIS - device to host
+    FIS_TYPE_DEV_BITS = 0xA1, // Set device bits FIS - device to host
 };
 pub const AHCIDeviceEntry = struct {
     kind: AHCIDevice,
@@ -261,58 +224,9 @@ pub const AHCIDeviceEntry = struct {
 };
 
 // FIS register - Host to Device
-pub const FIS_Reg_H2D = packed struct {
-    fis_type: u8,
-    pmport: u4,
-    _reserved_0: u3 = 0,
-    c: u1,
-
-    command: u8,
-    featurel: u8,
-
-    lba0: u8,
-    lba1: u8,
-    lba2: u8,
-    device: u8,
-
-    lba3: u8,
-    lba4: u8,
-    lba5: u8,
-    featureh: u8,
-
-    countl: u8,
-    counth: u8,
-    icc: u8,
-    control: u8,
-
-    _reserved_1: u64 = 0
-};
+pub const FIS_Reg_H2D = packed struct { fis_type: u8, pmport: u4, _reserved_0: u3 = 0, c: u1, command: u8, featurel: u8, lba0: u8, lba1: u8, lba2: u8, device: u8, lba3: u8, lba4: u8, lba5: u8, featureh: u8, countl: u8, counth: u8, icc: u8, control: u8, _reserved_1: u64 = 0 };
 // FIS register - Device to Host
-pub const FIS_Reg_D2H = packed struct {
-    fis_type: u8,
-    pmport: u4,
-    _reserved_0: u2,
-    i: u1,
-    _reserved_1: u1,
-
-    status: u8,
-    @"error": u8,
-
-    lba0: u8,
-    lba1: u8,
-    lba2: u8,
-    device: u8,
-
-    lba3: u8,
-    lba4: u8,
-    lba5: u8,
-    _reserved_2: u8,
-
-    countl: u8,
-    counth: u8,
-    _reserved_3: u16,
-    _reserved_4: u64
-};
+pub const FIS_Reg_D2H = packed struct { fis_type: u8, pmport: u4, _reserved_0: u2, i: u1, _reserved_1: u1, status: u8, @"error": u8, lba0: u8, lba1: u8, lba2: u8, device: u8, lba3: u8, lba4: u8, lba5: u8, _reserved_2: u8, countl: u8, counth: u8, _reserved_3: u16, _reserved_4: u64 };
 
 pub const FISData = packed struct {
     fis_type: u8,
@@ -325,58 +239,8 @@ pub const FISData = packed struct {
         return @ptrCast(&s.__data__);
     }
 };
-pub const FISPIOSetup = packed struct {
-    fis_type: u8,
-
-    pmport: u4,
-    _reserved_0: u1,
-    d: u1,
-
-    i: u1,
-    _reserved_1: u1,
-
-    status: u8,
-    @"error": u8,
-
-    lba0: u8,
-    lba1: u8,
-    lba2: u8,
-    device: u8,
-
-    lba3: u8,
-    lba4: u8,
-    lba5: u8,
-    _reserved_2: u8,
-
-    countl: u8,
-    counth: u8,
-    _reserved_3: u8,
-    e_status: u8,
-
-    tc: u16,
-    _reserved_4: u16
-};
-pub const FISDMASetup = packed struct {
-    fis_type: u8,
-
-    pmport: u4,
-    _reserved_0: u1,
-    d: u1,
-
-    i: u1,
-    a: u1,
-
-    _reserved_1: u16,
-    DMAbufferID: u64,
-
-    _reserved_2: u32,
-
-    DMAbufferOffset: u32,
-
-    TransferCount: u32,
-
-    _reserved_3: u32
-};
+pub const FISPIOSetup = packed struct { fis_type: u8, pmport: u4, _reserved_0: u1, d: u1, i: u1, _reserved_1: u1, status: u8, @"error": u8, lba0: u8, lba1: u8, lba2: u8, device: u8, lba3: u8, lba4: u8, lba5: u8, _reserved_2: u8, countl: u8, counth: u8, _reserved_3: u8, e_status: u8, tc: u16, _reserved_4: u16 };
+pub const FISDMASetup = packed struct { fis_type: u8, pmport: u4, _reserved_0: u1, d: u1, i: u1, a: u1, _reserved_1: u16, DMAbufferID: u64, _reserved_2: u32, DMAbufferOffset: u32, TransferCount: u32, _reserved_3: u32 };
 
 pub const HBAMem = extern struct {
     cap: u32,
@@ -439,7 +303,7 @@ pub const HBA_FIS = extern struct {
 
     ufis: [64]u8,
 
-    _reserved_0: [96]u8
+    _reserved_0: [96]u8,
 };
 
 pub const HBACMDHeader = packed struct {
@@ -476,12 +340,4 @@ pub const HBACMDTable = extern struct {
         return &@as([*]HBAPRDTEntry, @ptrCast(&s.__prdt_entry__))[i];
     }
 };
-pub const HBAPRDTEntry = packed struct {
-    dba: u32,
-    dbau: u32,
-    _reserved_0: u32 = 0,
-
-    dbc: u22,
-    _reserved_1: u9 = 0,
-    i: u1
-};
+pub const HBAPRDTEntry = packed struct { dba: u32, dbau: u32, _reserved_0: u32 = 0, dbc: u22, _reserved_1: u9 = 0, i: u1 };
