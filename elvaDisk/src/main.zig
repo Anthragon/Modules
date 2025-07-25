@@ -4,6 +4,7 @@ const modules = root.modules;
 const sys = root.system;
 const debug = root.debug;
 const pci = root.devices.pci;
+const disk = root.devices.disk;
 
 const PciDevice = pci.PciDevice;
 
@@ -34,7 +35,7 @@ pub fn deinit() callconv(.c) void {
 
 
 pub fn probe_disk(de: ?*anyopaque) usize {
-    var disk_entry: *root.devices.disk.DiskEntry = @ptrCast(@alignCast(de));
+    var disk_entry: *disk.DiskInfo = @ptrCast(@alignCast(de));
 
     var buf: [512]u8 = undefined;
     disk_entry.read(0, &buf) catch return 1;

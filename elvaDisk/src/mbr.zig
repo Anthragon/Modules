@@ -2,9 +2,9 @@ const std = @import("std");
 const root = @import("root");
 
 const disk = root.devices.disk;
-const DiskEntry = disk.DiskEntry;
+const DiskInfo = disk.DiskInfo;
 
-pub fn analyze(sector: []const u8, entry: *DiskEntry) !void {
+pub fn analyze(sector: []const u8, entry: *DiskInfo) !void {
     _ = sector;
     _ = entry;
 
