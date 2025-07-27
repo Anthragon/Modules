@@ -1,6 +1,8 @@
 const std = @import("std");
 const root = @import("root");
 
+const log = std.log.scoped(.@"elvaDisk GPT");
+
 const fs = root.fs;
 const FsNode = fs.FsNode;
 
@@ -38,14 +40,14 @@ pub fn analyze(sector: []u8, entry: *DiskInfo) !void {
             const res = entry.fs_node.append(&node.node);
             if (res.@"error" != .noerror) std.debug.panic("{s}", .{@tagName(res.@"error")});
 
-            std.log.info("added {s}/{s} to fs\n", .{ entry.fs_node.name, node.node.name });
+            log.info("added {s}/{s} to fs", .{ entry.fs_node.name, node.node.name });
 
         }
     }
 
-    std.log.info("\n", .{});
+    log.info("", .{});
     root.fs.lsroot();
-    std.log.info("\n", .{});
+    log.info("", .{});
 
 }
 

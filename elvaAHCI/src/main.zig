@@ -4,6 +4,8 @@ const modules = root.modules;
 const sys = root.system;
 const pci = root.devices.pci;
 
+const log = std.log.scoped(.elvaAHCI);
+
 const PciDevice = pci.PciDevice;
 
 const allocator = root.mem.heap.kernel_buddy_allocator;
@@ -18,19 +20,19 @@ pub const module_liscence: [*:0]const u8 = "MPL-2.0";
 pub const module_uuid: u128 = @bitCast(root.utils.Guid.fromString("37df8d37-d77c-4f86-bb99-514b542b23da") catch unreachable);
 
 pub fn init() callconv(.c) bool {
-    std.log.info("Hello, elvaAHCI!\n", .{});
+    log.info("Hello, elvaAHCI!", .{});
 
     const query: [*]const pci.PciDeviceQuery = &[_]pci.PciDeviceQuery{
         .byClass(0x01, 0x06, 0), // SATA controller class
         .endOfChain(),
     };
 
-    std.log.debug("Probing PCI devices...\n", .{});
+    log.debug("Probing PCI devices...", .{});
     pci.pci_device_probe(query, device_probe);
 
-    std.log.info("\nlisting mass-storage devices:\n", .{});
+    log.info("\nlisting mass-storage devices:", .{});
     root.devices.disk.lsblk();
-    std.log.info("\n", .{});
+    log.info("", .{});
 
     var buf: [512]u8 = undefined;
     root.devices.disk.get_disk_by_idx(0).?.read(0, &buf) catch unreachable;
@@ -45,7 +47,7 @@ pub fn device_probe(dev: *PciDevice) callconv(.c) bool {
     // assign the correct names to it
     name_device(dev);
 
-    std.log.debug("Probing PCI device: {X:0>2}:{X:0>2}.{X:0>1} [{X:0>2}:{X:0>2}] {s}\n", .{
+    log.debug("Probing PCI device: {X:0>2}:{X:0>2}.{X:0>1} [{X:0>2}:{X:0>2}] {s}", .{
         dev.get_bus(),
         dev.get_device(),
         dev.get_function(),
@@ -55,7 +57,7 @@ pub fn device_probe(dev: *PciDevice) callconv(.c) bool {
     });
 
     const bar_info = dev.addr.barinfo(5);
-    std.log.debug("Bar info: ptr: {X}, size: {} bytes\n", .{ bar_info.phy, bar_info.size });
+    log.debug("Bar info: ptr: {X}, size: {} bytes", .{ bar_info.phy, bar_info.size });
     const bar_size_aligned = std.mem.alignForward(usize, bar_info.size, sys.pmm.page_size);
 
     const allocation = root.mem.heap.kernel_page_allocator.reserve(bar_size_aligned, .@"1");
@@ -64,7 +66,7 @@ pub fn device_probe(dev: *PciDevice) callconv(.c) bool {
     root.system.mem_paging.map_range(bar_info.phy, allocation, bar_size_aligned, .{ .disable_cache = true, .execute = false, .privileged = true, .read = true, .write = true, .lock = true }) catch |err| {
         // Mapping error! free the allocation and return false
         root.mem.heap.kernel_page_allocator.free(allocation);
-        std.log.debug("Error! {s}\n", .{@errorName(err)});
+        log.debug("Error! {s}", .{@errorName(err)});
         return false;
     };
 
@@ -81,12 +83,12 @@ pub fn find_cmdslot(port: *HBAPort, cmdslots: usize) isize {
         slots >>= 1;
     }
 
-    std.log.debug("Cannot find a free command list entry\n", .{});
+    log.debug("Cannot find a free command list entry", .{});
     return -1;
 }
 
 fn iterate_ports(abar: *HBAMem) void {
-    std.log.debug("Iterate though aHCI ports...\n", .{});
+    log.debug("Iterate though aHCI ports...", .{});
 
     // Search disk in implemented ports
     var pi: u32 = abar.pi;
@@ -99,9 +101,9 @@ fn iterate_ports(abar: *HBAMem) void {
             const port = abar.ports(i);
             const dt = check_type(port);
             if (dt == .sata) {
-                std.log.debug("SATA drive found in port {}\n", .{i});
-                sata.init_disk(abar, port) catch std.log.debug("Error while initializing SATA\n", .{});
-            } else if (dt == .satapi) std.log.debug("SATAPI drive found in port {}\n", .{i}) else if (dt == .semb) std.log.debug("SEMB drive found in port {}\n", .{i}) else if (dt == .pm) std.log.debug("PM drive found in port {}\n", .{i});
+                log.debug("SATA drive found in port {}", .{i});
+                sata.init_disk(abar, port) catch log.debug("Error while initializing SATA", .{});
+            } else if (dt == .satapi) log.debug("SATAPI drive found in port {}", .{i}) else if (dt == .semb) log.debug("SEMB drive found in port {}", .{i}) else if (dt == .pm) log.debug("PM drive found in port {}", .{i});
         }
     }
 }
@@ -125,12 +127,12 @@ fn check_type(port: *HBAPort) AHCIDevice {
 fn name_device(dev: *PciDevice) void {
     dev.type_str = "SATA Controller";
     switch (dev.addr.vendor_id().read()) {
-        else => |v| std.log.debug("Unknown vendor ID {X:0>4}", .{v}),
+        else => |v| log.debug("Unknown vendor ID {X:0>4}", .{v}),
 
         0x8086 => {
             dev.vendor_str = "Intel";
             switch (dev.addr.device_id().read()) {
-                else => |v| std.log.debug("Unknown device ID {X:0>4} from vendor {s}", .{ v, dev.vendor_str }),
+                else => |v| log.debug("Unknown device ID {X:0>4} from vendor {s}", .{ v, dev.vendor_str }),
 
                 0x06d2, 0x02d3 => dev.name_str = "Comet Lake SATA AHCI Controller",
 
@@ -176,7 +178,7 @@ fn name_device(dev: *PciDevice) void {
         0x1022 => {
             dev.vendor_str = "AMD";
             switch (dev.addr.device_id().read()) {
-                else => |v| std.log.debug("Unknown device ID {X:0>4} from vendor {s}", .{ v, dev.vendor_str }),
+                else => |v| log.debug("Unknown device ID {X:0>4} from vendor {s}", .{ v, dev.vendor_str }),
 
                 0x7801 => dev.name_str = "AMD FCH SATA Controller [AHCI mode]",
                 0x4391 => dev.name_str = "AMD SB7x0/SB8x0/SB9x0 SATA Controller [AHCI mode]",
@@ -186,7 +188,7 @@ fn name_device(dev: *PciDevice) void {
         0x1b21 => {
             dev.vendor_str = "ASMedia Technology Inc.";
             switch (dev.addr.device_id().read()) {
-                else => |v| std.log.debug("Unknown device ID {X:0>4} from vendor {s}", .{ v, dev.vendor_str }),
+                else => |v| log.debug("Unknown device ID {X:0>4} from vendor {s}", .{ v, dev.vendor_str }),
 
                 0x0612 => dev.name_str = "ASMedia ASM1062 Serial ATA Controller",
                 0x0611 => dev.name_str = "ASMedia ASM1061 SATA Controller",
@@ -196,7 +198,7 @@ fn name_device(dev: *PciDevice) void {
         0x1b4b => {
             dev.vendor_str = "Marvell Technology Group Ltd.";
             switch (dev.addr.device_id().read()) {
-                else => |v| std.log.debug("Unknown device ID {X:0>4} from vendor {s}", .{ v, dev.vendor_str }),
+                else => |v| log.debug("Unknown device ID {X:0>4} from vendor {s}", .{ v, dev.vendor_str }),
 
                 0x9123 => dev.name_str = "Marvell 88SE9123 PCIe SATA 6 Gb/s Controller",
                 0x9230 => dev.name_str = "Marvell 88SE9230 PCIe SATA 6 Gb/s Controller",

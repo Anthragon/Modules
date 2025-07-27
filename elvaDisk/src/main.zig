@@ -6,6 +6,8 @@ const debug = root.debug;
 const pci = root.devices.pci;
 const disk = root.devices.disk;
 
+const log = std.log.scoped(.elvaDisk);
+
 const PciDevice = pci.PciDevice;
 
 const allocator = root.mem.heap.kernel_buddy_allocator;
@@ -18,14 +20,7 @@ pub const module_liscence: [*:0]const u8 = "MPL-2.0";
 pub const module_uuid: u128 = @bitCast(root.utils.Guid.fromString("eb896ec0-46ef-4996-a8ef-c82c4ac9f05f") catch unreachable);
 
 pub fn init() callconv(.c) bool {
-    std.log.info("Hello, elvaDisk!\n", .{});
-
-    std.log.debug("Trying to bind to the event...\n", .{});
-    root.modules.temp_bind_event("device_disk_probe", probe_disk, null) catch {
-        std.log.warn("Error while binding!\n", .{});
-        return false;
-    };
-    std.log.debug("Bind ended sucessfully!", .{});
+    log.info("Hello, elvaDisk!", .{});
 
     return true;
 }
