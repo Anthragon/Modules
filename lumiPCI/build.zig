@@ -4,10 +4,19 @@ pub fn build(b: *std.Build) void {
     const target = b.standardTargetOptions(.{});
     const optimize = b.standardOptimizeOption(.{});
 
-    _ = b.addModule("elvaDisk", .{
+    const lib = b.addModule("lumiPCI_lib", .{
+        .root_source_file = b.path("lib/main.zig"),
+        .target = target,
+        .optimize = optimize,
+    });
+
+    const core = b.addModule("lumiPCI", .{
         .root_source_file = b.path("src/main.zig"),
         .target = target,
         .optimize = optimize,
     });
+
+    core.addImport("lib", lib);
+
 
 }

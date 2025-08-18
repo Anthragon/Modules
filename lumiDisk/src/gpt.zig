@@ -1,7 +1,7 @@
 const std = @import("std");
 const root = @import("root");
 
-const log = std.log.scoped(.@"elvaDisk GPT");
+const log = std.log.scoped(.@"lumiDisk GPT");
 
 const fs = root.fs;
 const FsNode = fs.FsNode;

@@ -1,42 +1,47 @@
 const std = @import("std");
 const root = @import("root");
+const pci = @import("pci_lib");
 const modules = root.modules;
 const sys = root.system;
-const pci = root.devices.pci;
+const capabilities = root.capabilities;
 
-const log = std.log.scoped(.elvaAHCI);
+const log = std.log.scoped(.lumiAHCI);
 
 const PciDevice = pci.PciDevice;
+const PciDeviceQuery = pci.PciDeviceQuery;
 
-const allocator = root.mem.heap.kernel_buddy_allocator;
+var arena: std.heap.ArenaAllocator = undefined;
+var allocator: std.mem.Allocator = undefined;
 
 const sata = @import("sata.zig");
 
 // Module information
-pub const module_name: [*:0]const u8 = "elvaAHCI";
+pub const module_name: [*:0]const u8 = "lumiAHCI";
 pub const module_version: [*:0]const u8 = "0.1.0";
-pub const module_author: [*:0]const u8 = "System Elva Team";
+pub const module_author: [*:0]const u8 = "lumi2021";
 pub const module_liscence: [*:0]const u8 = "MPL-2.0";
 pub const module_uuid: u128 = @bitCast(root.utils.Guid.fromString("37df8d37-d77c-4f86-bb99-514b542b23da") catch unreachable);
 
+var pci_mass_storage_query = [_]PciDeviceQuery{
+    .byClass(0x01, 0x06, 0), // SATA controller class
+    .endOfChain(),
+};
+
 pub fn init() callconv(.c) bool {
-    log.info("Hello, elvaAHCI!", .{});
+    log.info("Hello, lumiAHCI!", .{});
 
-    const query: [*]const pci.PciDeviceQuery = &[_]pci.PciDeviceQuery{
-        .byClass(0x01, 0x06, 0), // SATA controller class
-        .endOfChain(),
-    };
+    arena = .init(root.mem.heap.kernel_buddy_allocator);
+    allocator = arena.allocator();
 
-    log.debug("Probing PCI devices...", .{});
-    pci.pci_device_probe(query, device_probe);
+    const lspci: *const fn () callconv(.c) void = @ptrCast((capabilities.get_node_internal("Devices.PCI.lspci") orelse return false).data.callable);
+    lspci();
+    const pci_probe_event = capabilities.get_node_internal("Devices.PCI.device_probe") orelse return false;
 
-    log.info("\nlisting mass-storage devices:", .{});
-    root.devices.disk.lsblk();
-    log.info("", .{});
-
-    var buf: [512]u8 = undefined;
-    root.devices.disk.get_disk_by_idx(0).?.read(0, &buf) catch unreachable;
-    root.debug.dumpHexErr(&buf);
+    const res = pci_probe_event.data.event.bind(
+        @ptrCast(&device_probe),
+        @ptrCast(&pci_mass_storage_query),
+    );
+    if (!res) return false;
 
     return true;
 }
@@ -93,6 +98,7 @@ fn iterate_ports(abar: *HBAMem) void {
     // Search disk in implemented ports
     var pi: u32 = abar.pi;
     var i: usize = 0;
+
     while (i < 32) : ({
         i += 1;
         pi >>= 1;

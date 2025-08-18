@@ -6,7 +6,7 @@ const mem = root.mem;
 const dev = root.devices;
 const disk = dev.disk;
 
-const log = std.log.scoped(.@"elvaAHCI Sata");
+const log = std.log.scoped(.@"lumiAHCI Sata");
 
 const allocator = mem.heap.kernel_buddy_allocator;
 
@@ -54,7 +54,7 @@ pub fn init_disk(abar: *HBAMem, port: *HBAPort) !void {
     };
     _ = dev.disk.append_device(
         ctx,
-        if (rotation_rate == 0) @as([:0]const u8, "SATA-SSD") else @as([:0]const u8, "SATA-HDD"),
+        if (rotation_rate == 0) @as([:0]const u8, "sata-ssd") else @as([:0]const u8, "sata-hdd"),
         total_vsectors,
         &sata_vtable
     );

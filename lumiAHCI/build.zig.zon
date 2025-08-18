@@ -1,0 +1,10 @@
+.{
+    .name = .lumiAHCI,
+    .version = "0.0.0",
+
+    .dependencies = .{
+        .lumiPCI = .{ .path = "../lumiPCI" },
+    },
+
+    .paths = .{ "build.zig", "build.zig.zon" },
+}
