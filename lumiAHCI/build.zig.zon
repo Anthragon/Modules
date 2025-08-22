@@ -4,6 +4,7 @@
 
     .dependencies = .{
         .lumiPCI = .{ .path = "../lumiPCI" },
+        .lumiDisk = .{ .path = "../lumiDisk" },
     },
 
     .paths = .{ "build.zig", "build.zig.zon" },

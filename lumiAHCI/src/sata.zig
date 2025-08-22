@@ -1,10 +1,9 @@
 const std = @import("std");
 const root = @import("root");
+const disk = @import("disk_lib");
 const main = @import("main.zig");
 const debug = root.debug;
 const mem = root.mem;
-const dev = root.devices;
-const disk = dev.disk;
 
 const log = std.log.scoped(.@"lumiAHCI Sata");
 
@@ -44,6 +43,7 @@ pub fn init_disk(abar: *HBAMem, port: *HBAPort) !void {
     const total_vsectors = total_sectors * @divExact(sector_size, 512);
 
     const ctx = allocator.create(DiskEntryContext) catch unreachable;
+    const disk_type = if (rotation_rate == 0) @as([:0]const u8, "sata-ssd") else @as([:0]const u8, "sata-hdd");
     ctx.* = .{
         .abar = abar,
         .port = port,
@@ -52,72 +52,13 @@ pub fn init_disk(abar: *HBAMem, port: *HBAPort) !void {
         .sec_size = sector_size,
 
     };
-    _ = dev.disk.append_device(
+    main.disk_dynamic.append_device(
         ctx,
-        if (rotation_rate == 0) @as([:0]const u8, "sata-ssd") else @as([:0]const u8, "sata-hdd"),
+        disk_type,
         total_vsectors,
         &sata_vtable
     );
     
-}
-
-pub fn identify_sata(abar: *HBAMem, port: *HBAPort) !IdentifyDeviceData {
-   
-   var buf: [512]u8 = undefined;
-
-    port.is = @bitCast(@as(i32, -1));
-    const i_slot = find_cmdslot(port, ((abar.cap >> 8) & 0x1F) + 1);
-    if (i_slot == -1) return error.NoCmdSlot;
-    const slot: usize = @intCast(i_slot);
-
-    const cmdheaders = mem.ptrFromPhys([*]HBACMDHeader,
-        (@as(u64, @intCast(port.clbu)) << 32) | @as(u64, @intCast(port.clb)));
-    const cmdheader = &cmdheaders[slot];
-    cmdheader.cfl = @sizeOf(FIS_Reg_H2D) / @sizeOf(u32);
-    cmdheader.w = 0;
-    cmdheader.prdtl = 1;
-
-    const cmdtbl = mem.ptrFromPhys(*HBACMDTable,
-        (@as(u64, @intCast(cmdheader.ctbau)) << 32) | @as(u64, @intCast(cmdheader.ctba)));
-    @memset(@as([*]u8, @ptrCast(cmdtbl))[0 .. @sizeOf(HBACMDTable) + @sizeOf(HBAPRDTEntry)], 0);
-
-    const phys_buf = mem.physFromPtr((&buf).ptr);
-    cmdtbl.prdt_entry(0).* = .{
-        .dba  = @intCast(phys_buf & 0xFFFFFFFF),
-        .dbau = @intCast(phys_buf >> 32),
-        .dbc  = 512 - 1,
-        .i    = 1
-    };
-
-    const fis: *FIS_Reg_H2D = @ptrCast(&cmdtbl.cfis);
-    fis.* = .{
-        .fis_type = 0x27,
-        .pmport   = 0,
-        .c        = 1,
-        .command  = 0xEC,
-        .featurel = 0,
-        .featureh = 0,
-        .lba0 = 0, .lba1 = 0, .lba2 = 0,
-        .device = 0,
-        .lba3 = 0, .lba4 = 0, .lba5 = 0,
-        .countl = 0, .counth = 0,
-        .icc = 0, .control = 0,
-    };
-
-    var spin: usize = 0;
-    while ((port.tfd & 0x88) != 0 and spin < 1000000) : (spin += 1) {}
-    if (spin == 1000000) return error.PortIsHung;
-
-    port.ci = std.math.shl(u32, 1, slot);
-
-    var timeout: usize = 0;
-    while (true) : (timeout += 1) {
-        if ((port.ci & std.math.shl(u32, 1, slot)) == 0) break;
-        if ((port.is & (1 << 30)) != 0) return error.ReadError;
-        if (timeout > 100000) return error.Timeout;
-    }
-
-    return std.mem.bytesToValue(IdentifyDeviceData, &buf);
 }
 
 const sata_vtable: disk.DiskEntry.VTable = .{
@@ -127,11 +68,11 @@ const sata_vtable: disk.DiskEntry.VTable = .{
 };
 
 // Hooks
-fn read_sata(ctx: *anyopaque, sector: u64, buffer: [*]u8, len: usize) callconv(.c) bool {
+fn read_sata(ctx: ?*anyopaque, sector: u64, buffer: [*]u8, len: usize) callconv(.c) bool {
 
     if (len % 512 != 0) return false;
 
-    const context: *DiskEntryContext = @ptrCast(@alignCast(ctx));
+    const context: *DiskEntryContext = @ptrCast(@alignCast(ctx.?));
     const abar = context.abar;
     const port = context.port;
     var buf = buffer[0 .. len];
@@ -211,16 +152,80 @@ fn read_sata(ctx: *anyopaque, sector: u64, buffer: [*]u8, len: usize) callconv(.
 
     return true;
 }
-fn write_sata(ctx: *anyopaque, sector: u64, buffer: [*]u8, len: usize) callconv(.c) bool {
+fn write_sata(ctx: ?*anyopaque, sector: u64, buffer: [*]u8, len: usize) callconv(.c) bool {
     _ = ctx;
     _ = sector;
     _ = buffer;
     _ = len;
     return false;
 }
-fn remove(ctx: *anyopaque) callconv(.c) void {
+fn remove(ctx: ?*anyopaque) callconv(.c) void {
     const context: *DiskEntryContext = @ptrCast(@alignCast(ctx));
     allocator.destroy(context);
+}
+
+pub fn identify_sata(abar: *HBAMem, port: *HBAPort) !IdentifyDeviceData {
+   
+   var buf: [512]u8 = undefined;
+
+    // Find a free cmdslot
+    port.is = @bitCast(@as(i32, -1));
+    const i_slot = find_cmdslot(port, ((abar.cap >> 8) & 0x1F) + 1);
+    if (i_slot == -1) return error.NoCmdSlot;
+    const slot: usize = @intCast(i_slot);
+
+    // Routine to manually call the identify disk opcode
+    // (result will be dumped on buf)
+    {
+        const cmdheaders = mem.ptrFromPhys([*]HBACMDHeader,
+            (@as(u64, @intCast(port.clbu)) << 32) | @as(u64, @intCast(port.clb)));
+        const cmdheader = &cmdheaders[slot];
+        cmdheader.cfl = @sizeOf(FIS_Reg_H2D) / @sizeOf(u32);
+        cmdheader.w = 0;
+        cmdheader.prdtl = 1;
+
+        const cmdtbl = mem.ptrFromPhys(*HBACMDTable,
+            (@as(u64, @intCast(cmdheader.ctbau)) << 32) | @as(u64, @intCast(cmdheader.ctba)));
+        @memset(@as([*]u8, @ptrCast(cmdtbl))[0 .. @sizeOf(HBACMDTable) + @sizeOf(HBAPRDTEntry)], 0);
+
+        const phys_buf = mem.physFromPtr((&buf).ptr);
+        cmdtbl.prdt_entry(0).* = .{
+            .dba  = @intCast(phys_buf & 0xFFFFFFFF),
+            .dbau = @intCast(phys_buf >> 32),
+            .dbc  = 512 - 1,
+            .i    = 1
+        };
+
+        const fis: *FIS_Reg_H2D = @ptrCast(&cmdtbl.cfis);
+        fis.* = .{
+            .fis_type = 0x27,
+            .pmport   = 0,
+            .c        = 1,
+            .command  = 0xEC,
+            .featurel = 0,
+            .featureh = 0,
+            .lba0 = 0, .lba1 = 0, .lba2 = 0,
+            .device = 0,
+            .lba3 = 0, .lba4 = 0, .lba5 = 0,
+            .countl = 0, .counth = 0,
+            .icc = 0, .control = 0,
+        };
+
+        var spin: usize = 0;
+        while ((port.tfd & 0x88) != 0 and spin < 1000000) : (spin += 1) {}
+        if (spin == 1000000) return error.PortIsHung;
+
+        port.ci = std.math.shl(u32, 1, slot);
+
+        var timeout: usize = 0;
+        while (true) : (timeout += 1) {
+            if ((port.ci & std.math.shl(u32, 1, slot)) == 0) break;
+            if ((port.is & (1 << 30)) != 0) return error.ReadError;
+            if (timeout > 100000) return error.Timeout;
+        }
+    }
+
+    return std.mem.bytesToValue(IdentifyDeviceData, &buf);
 }
 
 fn start_cmd(port: *HBAPort) void {

@@ -1,16 +1,15 @@
 const std = @import("std");
 const root = @import("root");
+const lib = @import("lib");
 const modules = root.modules;
 const sys = root.system;
 const debug = root.debug;
-const pci = root.devices.pci;
-const disk = root.devices.disk;
+const capabilities = root.capabilities;
+const Guid = root.utils.Guid;
 
 const log = std.log.scoped(.lumiDisk);
 
-const PciDevice = pci.PciDevice;
-
-const allocator = root.mem.heap.kernel_buddy_allocator;
+const DiskEntry = lib.DiskEntry;
 
 // Module information
 pub const module_name: [*:0]const u8 =     "lumiDisk";
@@ -22,18 +21,55 @@ pub const module_uuid: u128 = @bitCast(root.utils.Guid.fromString("eb896ec0-46ef
 pub fn init() callconv(.c) bool {
     log.info("Hello, lumiDisk!", .{});
 
+    arena = .init(root.mem.heap.kernel_buddy_allocator);
+    allocator = arena.allocator();
+
+    const devices_node = capabilities.get_node_by_guid(Guid.fromString("753d870c-e51b-40d2-96b9-beb3bfa8cd02") catch unreachable) orelse return false;
+    mass_storage_resource = capabilities.create_resource(Guid.fromString("35d36bb8-62f0-43d6-a617-d0bac8069a16") catch unreachable, devices_node, "MassStorage") catch unreachable;
+
+    _ = capabilities.create_callable(mass_storage_resource, "append_device", @ptrCast(&append_device)) catch unreachable;
+    _ = capabilities.create_callable(mass_storage_resource, "lsblk", @ptrCast(&lsblk)) catch unreachable;
+
     return true;
 }
 pub fn deinit() callconv(.c) void {
-
+    arena.deinit();
 }
 
+var mass_storage_resource: *capabilities.Node = undefined;
 
-pub fn probe_disk(de: ?*anyopaque) usize {
-    var disk_entry: *disk.DiskInfo = @ptrCast(@alignCast(de));
+var arena: std.heap.ArenaAllocator = undefined;
+var allocator: std.mem.Allocator = undefined;
+
+var disk_list: std.ArrayListUnmanaged(*DiskEntry) = .empty;
+
+fn append_device(
+    ctx: *anyopaque,
+    devtype: ?[*:0]const u8,
+    seclen: usize,
+    vtable: *const DiskEntry.VTable,
+) callconv(.c) void {
+
+    var entry = allocator.create(DiskEntry) catch root.oom_panic();
+    entry.* = .{
+        .context = ctx,
+        .sectors_length = seclen,
+        .vtable = vtable,
+        .global_identifier = undefined,
+    };
+    if (devtype != null) {
+        const copy = allocator.dupeZ(u8, std.mem.sliceTo(devtype.?, 0)) catch root.oom_panic();
+        entry.type = copy;
+    }
+
+    disk_list.append(allocator, entry) catch root.oom_panic();
+    scan_disk(entry);
+}
+
+fn scan_disk(disk_entry: *DiskEntry) void {
 
     var buf: [512]u8 = undefined;
-    disk_entry.read(0, &buf) catch return 1;
+    disk_entry.read(0, &buf) catch @panic("Failed to read disk");
     
     const partitions = std.mem.bytesAsSlice(MBRPartition, buf[0x1be .. 0x1fe]);
 
@@ -46,13 +82,26 @@ pub fn probe_disk(de: ?*anyopaque) usize {
     }
 
     if (isgpt) {
-        disk_entry.read(1, &buf) catch return 1;
-        @import("gpt.zig").analyze(&buf, disk_entry) catch return 1;
+        disk_entry.read(1, &buf) catch @panic("Failed to read disk");
+        @import("gpt.zig").analyze(&buf, disk_entry) catch @panic("Failed to read disk");
     } else {
-        @import("mbr.zig").analyze(&buf, disk_entry) catch return 1;
+        @import("mbr.zig").analyze(&buf, disk_entry) catch @panic("Failed to read disk");
     }
 
-    return 0;
+}
+
+
+fn lsblk() callconv(.c) void {
+
+    for (disk_list.items) |i| {
+        log.info("{s}", .{ i.type });
+
+        for (0..i.partitions_length) |j| {
+            const p = i.partitions[j];
+            log.info("  {s}", .{ p.readable_name });
+        }
+    }
+
 }
 
 
@@ -71,5 +120,4 @@ const MBRPartition = packed struct {
         _,
     };
 };
-
 

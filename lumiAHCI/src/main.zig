@@ -1,6 +1,7 @@
 const std = @import("std");
 const root = @import("root");
 const pci = @import("pci_lib");
+const disk = @import("disk_lib");
 const modules = root.modules;
 const sys = root.system;
 const capabilities = root.capabilities;
@@ -22,6 +23,14 @@ pub const module_author: [*:0]const u8 = "lumi2021";
 pub const module_liscence: [*:0]const u8 = "MPL-2.0";
 pub const module_uuid: u128 = @bitCast(root.utils.Guid.fromString("37df8d37-d77c-4f86-bb99-514b542b23da") catch unreachable);
 
+pub var pci_dynamic: struct {
+    lspci:  *const fn () callconv(.c) void,
+    device_probe: *capabilities.Event
+} = undefined;
+pub var disk_dynamic: struct {
+    append_device: *const fn (*anyopaque, ?[*:0]const u8, usize, *const disk.DiskEntry.VTable) callconv(.c) void,
+} = undefined;
+
 var pci_mass_storage_query = [_]PciDeviceQuery{
     .byClass(0x01, 0x06, 0), // SATA controller class
     .endOfChain(),
@@ -33,11 +42,12 @@ pub fn init() callconv(.c) bool {
     arena = .init(root.mem.heap.kernel_buddy_allocator);
     allocator = arena.allocator();
 
-    const lspci: *const fn () callconv(.c) void = @ptrCast((capabilities.get_node_internal("Devices.PCI.lspci") orelse return false).data.callable);
-    lspci();
-    const pci_probe_event = capabilities.get_node_internal("Devices.PCI.device_probe") orelse return false;
+    pci_dynamic.lspci = @ptrCast((capabilities.get_node("Devices.PCI.lspci") orelse return false).data.callable);
+    pci_dynamic.device_probe = &(capabilities.get_node("Devices.PCI.device_probe") orelse return false).data.event;
+    
+    disk_dynamic.append_device = @ptrCast((capabilities.get_node("Devices.MassStorage.append_device") orelse return false).data.callable);
 
-    const res = pci_probe_event.data.event.bind(
+    const res = pci_dynamic.device_probe.bind(
         @ptrCast(&device_probe),
         @ptrCast(&pci_mass_storage_query),
     );
@@ -46,9 +56,10 @@ pub fn init() callconv(.c) bool {
     return true;
 }
 pub fn deinit() callconv(.c) void {}
+
 pub fn device_probe(dev: *PciDevice) callconv(.c) bool {
 
-    // It will swith-case by the vendor and device to
+    // Swith-case by the vendor and device to
     // assign the correct names to it
     name_device(dev);
 
@@ -61,10 +72,10 @@ pub fn device_probe(dev: *PciDevice) callconv(.c) bool {
         dev.name_str,
     });
 
+    // Allocate the memory for the device bar
     const bar_info = dev.addr.barinfo(5);
     log.debug("Bar info: ptr: {X}, size: {} bytes", .{ bar_info.phy, bar_info.size });
     const bar_size_aligned = std.mem.alignForward(usize, bar_info.size, sys.pmm.page_size);
-
     const allocation = root.mem.heap.kernel_page_allocator.reserve(bar_size_aligned, .@"1");
 
     // Remapping pages
@@ -75,6 +86,8 @@ pub fn device_probe(dev: *PciDevice) callconv(.c) bool {
         return false;
     };
 
+    // Get the abar pointer and iterate for all the
+    // controller's ports
     const abar: *HBAMem = @ptrFromInt(allocation);
     iterate_ports(abar);
 
@@ -106,10 +119,14 @@ fn iterate_ports(abar: *HBAMem) void {
         if (pi & 1 != 0) {
             const port = abar.ports(i);
             const dt = check_type(port);
+
             if (dt == .sata) {
                 log.debug("SATA drive found in port {}", .{i});
                 sata.init_disk(abar, port) catch log.debug("Error while initializing SATA", .{});
-            } else if (dt == .satapi) log.debug("SATAPI drive found in port {}", .{i}) else if (dt == .semb) log.debug("SEMB drive found in port {}", .{i}) else if (dt == .pm) log.debug("PM drive found in port {}", .{i});
+            }
+            else if (dt == .satapi) { log.debug("SATAPI drive found in port {}. Not implemented!", .{i}); }
+            else if (dt == .semb) { log.debug("SEMB drive found in port {}. Not implemented!", .{i}); }
+            else if (dt == .pm) { log.debug("PM drive found in port {}. Not implemented!", .{i}); }
         }
     }
 }

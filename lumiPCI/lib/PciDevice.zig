@@ -1,4 +1,4 @@
-const root = @import("main.zig");
+const root = @import("root.zig");
 
 pub const PciDevice = extern struct {
 

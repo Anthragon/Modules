@@ -48,13 +48,13 @@ pub fn init() callconv(.c) bool {
     dev_list = .init(allocator);
 
     // Creating the resource interfaces
-    const devices_node = capabilities.get_node_by_guid_internal(Guid.fromString("753d870c-e51b-40d2-96b9-beb3bfa8cd02") catch unreachable);
-    pci_resource = capabilities.create_resource_internal(Guid.fromString("4a56f4da-feee-4715-aed3-25f754025840") catch unreachable, devices_node, "PCI") catch @panic("Not Implemented");
+    const devices_node = capabilities.get_node_by_guid(Guid.fromString("753d870c-e51b-40d2-96b9-beb3bfa8cd02") catch unreachable);
+    pci_resource = capabilities.create_resource(Guid.fromString("4a56f4da-feee-4715-aed3-25f754025840") catch unreachable, devices_node, "PCI") catch @panic("Not Implemented");
 
     // hook to Devices.PCI.device_probe event
-    _ = capabilities.create_event_internal(pci_resource, "device_probe", on_pci_device_probe_bind, on_pci_device_probe_unbind) catch unreachable;
+    _ = capabilities.create_event(pci_resource, "device_probe", on_pci_device_probe_bind, on_pci_device_probe_unbind) catch unreachable;
     // hook to Devices.PCI.lspci function
-    _ = capabilities.create_callable_internal(pci_resource, "lspci", @ptrCast(&lspci)) catch unreachable;
+    _ = capabilities.create_callable(pci_resource, "lspci", @ptrCast(&lspci)) catch unreachable;
 
     // Iterate though all PCI device slots, checks if there is a device
     // and append at the global dev_list list
