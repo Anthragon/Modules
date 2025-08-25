@@ -5,11 +5,13 @@ const modules = root.modules;
 const sys = root.system;
 const debug = root.debug;
 const capabilities = root.capabilities;
+const units = root.utils.units.data;
 const Guid = root.utils.Guid;
 
 const log = std.log.scoped(.lumiDisk);
 
 const DiskEntry = lib.DiskEntry;
+const PartEntry = lib.PartitionEntry;
 
 // Module information
 pub const module_name: [*:0]const u8 =     "lumiDisk";
@@ -27,8 +29,14 @@ pub fn init() callconv(.c) bool {
     const devices_node = capabilities.get_node_by_guid(Guid.fromString("753d870c-e51b-40d2-96b9-beb3bfa8cd02") catch unreachable) orelse return false;
     mass_storage_resource = capabilities.create_resource(Guid.fromString("35d36bb8-62f0-43d6-a617-d0bac8069a16") catch unreachable, devices_node, "MassStorage") catch unreachable;
 
-    _ = capabilities.create_callable(mass_storage_resource, "append_device", @ptrCast(&append_device)) catch unreachable;
     _ = capabilities.create_callable(mass_storage_resource, "lsblk", @ptrCast(&lsblk)) catch unreachable;
+    _ = capabilities.create_callable(mass_storage_resource, "append_device", @ptrCast(&append_device)) catch unreachable;
+    
+    _ = capabilities.create_callable(mass_storage_resource, "get_disk_by_identifier", @ptrCast(&get_disk_by_identifier)) catch unreachable;
+    _ = capabilities.create_callable(mass_storage_resource, "get_disk_by_identifier_part_by_identifier", @ptrCast(&get_disk_by_identifier_part_by_identifier)) catch unreachable;
+    
+    _ = capabilities.create_callable(mass_storage_resource, "DiskEntry__read", @ptrCast(&DiskEntry.c_read)) catch unreachable;
+    _ = capabilities.create_callable(mass_storage_resource, "PartEntry__read", @ptrCast(&DiskEntry.c_read)) catch unreachable;
 
     return true;
 }
@@ -55,7 +63,7 @@ fn append_device(
         .context = ctx,
         .sectors_length = seclen,
         .vtable = vtable,
-        .global_identifier = undefined,
+        .global_identifier = null,
     };
     if (devtype != null) {
         const copy = allocator.dupeZ(u8, std.mem.sliceTo(devtype.?, 0)) catch root.oom_panic();
@@ -64,6 +72,29 @@ fn append_device(
 
     disk_list.append(allocator, entry) catch root.oom_panic();
     scan_disk(entry);
+}
+
+fn get_disk_by_identifier(ident: [*:0]const u8) callconv(.c) ?*DiskEntry {
+    const identifier = std.mem.sliceTo(ident, 0);
+
+    for (disk_list.items) |disk| {
+        if (disk.global_identifier != null
+            and std.mem.eql(u8, std.mem.sliceTo(disk.global_identifier.?, 0), identifier)) return disk;
+    }
+    return null;
+}
+fn get_disk_by_identifier_part_by_identifier(disk_ident: [*:0]const u8, part_ident: [*:0]const u8) callconv(.c) ?*PartEntry {
+    const disk = get_disk_by_identifier(disk_ident) orelse return null;
+    const parts = disk.partitions[0..disk.partitions_length];
+
+    const identifier = std.mem.sliceTo(part_ident, 0);
+
+    for (parts, 0..) |part, i| {
+        if (part.global_identifier != null
+        and std.mem.eql(u8, std.mem.sliceTo(part.global_identifier.?, 0), identifier))
+            return &disk.partitions[i];
+    }
+    return null;
 }
 
 fn scan_disk(disk_entry: *DiskEntry) void {
@@ -94,16 +125,29 @@ fn scan_disk(disk_entry: *DiskEntry) void {
 fn lsblk() callconv(.c) void {
 
     for (disk_list.items) |i| {
-        log.info("{s}", .{ i.type });
+        const ds = calc_size_and_unit(i.sectors_length);
+        log.info("{s: <15} Disk    {d: >5.2} {s: <6} {s}", .{ i.type, ds.@"0", units[ds.@"1"].name, i.global_identifier orelse "--" });
 
         for (0..i.partitions_length) |j| {
             const p = i.partitions[j];
-            log.info("  {s}", .{ p.readable_name });
+            const ps = calc_size_and_unit(p.end_sector - p.start_sector);
+            log.info("   {s: <12} Part    {d: >5.2} {s: <6} {s}", .{ p.readable_name, ps.@"0", units[ps.@"1"].name, p.global_identifier orelse "--" });
         }
     }
 
 }
 
+fn calc_size_and_unit(sectors: usize) struct { f64, usize } {
+    const total_bytes = sectors * 512;
+
+    var i: usize = 0;
+    while (true) : (i += 1) if (total_bytes >= units[i].size) break;
+
+    const size_float: f64 = @floatFromInt(total_bytes);
+    const unit_float: f64 = @floatFromInt(units[i].size);
+
+    return .{ size_float / unit_float, i };
+}
 
 const MBRPartition = packed struct {
     status: Status,

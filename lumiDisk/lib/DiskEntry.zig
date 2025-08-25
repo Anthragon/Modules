@@ -23,7 +23,7 @@ pub const DiskEntry = extern struct {
 
     /// Disk's global identifier string
     /// e.g. disk's uuid in GPT disks
-    global_identifier: [*:0]const u8,
+    global_identifier: ?[*:0]const u8,
 
     /// Partition entries for this disk entry
     partitions: [*]PartitionEntry = undefined,
@@ -50,7 +50,7 @@ pub const PartitionEntry = extern struct {
     start_sector: usize,
     end_sector: usize,
     
-    global_identifier: [*:0]const u8,
+    global_identifier: ?[*:0]const u8,
     readable_name: [*:0]const u8,
 
     /// Performs a read operation, offsetted to the partition base

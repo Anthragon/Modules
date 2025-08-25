@@ -19,6 +19,10 @@ pub fn analyze(sector: []u8, entry: *DiskEntry) !void {
     const header = std.mem.bytesToValue(Header, sector);
     if (!std.mem.eql(u8, &header.signature, "EFI PART")) return error.WrongSignature;
 
+    const disk_guid = std.fmt.allocPrintZ(
+        allocator, "{}", .{header.guid}) catch root.oom_panic();
+    entry.global_identifier = disk_guid.ptr;
+
     const table_sectors = header.part_length / 4;
     
     var entries_list: std.ArrayList(PartitionEntry) = .init(allocator);
@@ -36,7 +40,6 @@ pub fn analyze(sector: []u8, entry: *DiskEntry) !void {
             _ = std.unicode.utf16LeToUtf8(&namebuf, &i.name) catch continue;
 
             const guidbuf = std.fmt.allocPrintZ(allocator, "{}", .{i.identifier}) catch root.oom_panic();
-            errdefer allocator.free(guidbuf);
     
             entries_list.append(.{
                 .disk_parent = entry,
