@@ -31,11 +31,11 @@ pub const DiskEntry = extern struct {
     partitions_length: usize = 0,
 
     /// Performs a read operation
-    pub fn read(s: @This(), sector: usize, buffer: []u8) !void {
+    pub fn read(s: *@This(), sector: usize, buffer: []u8) !void {
         if (!s.vtable.read(s.context, sector, buffer.ptr, buffer.len)) return error.ReadFailed;
     }
     /// Performs a read operation (C compatibility version)
-    pub fn c_read(s: @This(), sector: usize, buf_ptr: [*]u8, buf_len: usize) callconv(.c) bool {
+    pub fn c_read(s: *@This(), sector: usize, buf_ptr: [*]u8, buf_len: usize) callconv(.c) bool {
         return s.vtable.read(s.context, sector, buf_ptr, buf_len);
     }
     // TODO write
@@ -54,14 +54,15 @@ pub const PartitionEntry = extern struct {
     readable_name: [*:0]const u8,
 
     /// Performs a read operation, offsetted to the partition base
-    pub fn read(s: @This(), sector: usize, buffer: []u8) bool {
+    pub fn read(s: *@This(), sector: usize, buffer: []u8) !void {
         if (sector + s.start_sector > s.end_sector) return false;
-        s.disk_parent.read(s.start_sector + sector, buffer);
+        try s.disk_parent.read(s.start_sector + sector, buffer);
     }
     /// Performs a read operation, offsetted to the partition base (C compatibility version)
-    pub fn c_read(s: @This(), sector: usize, buf_ptr: [*]u8, buf_len: usize) callconv(.c) bool {
+    pub fn c_read(s: *@This(), sector: usize, buf_ptr: [*]u8, buf_len: usize) callconv(.c) bool {
         if (sector + s.start_sector > s.end_sector) return false;
-        s.disk_parent.read(s.start_sector + sector, buf_ptr, buf_len);
+        s.disk_parent.read(s.start_sector + sector, buf_ptr[0..buf_len]) catch return false;
+        return true;
     }
 
 };

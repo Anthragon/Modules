@@ -36,7 +36,7 @@ pub fn init() callconv(.c) bool {
     _ = capabilities.create_callable(mass_storage_resource, "get_disk_by_identifier_part_by_identifier", @ptrCast(&get_disk_by_identifier_part_by_identifier)) catch unreachable;
     
     _ = capabilities.create_callable(mass_storage_resource, "DiskEntry__read", @ptrCast(&DiskEntry.c_read)) catch unreachable;
-    _ = capabilities.create_callable(mass_storage_resource, "PartEntry__read", @ptrCast(&DiskEntry.c_read)) catch unreachable;
+    _ = capabilities.create_callable(mass_storage_resource, "PartEntry__read", @ptrCast(&PartEntry.c_read)) catch unreachable;
 
     return true;
 }

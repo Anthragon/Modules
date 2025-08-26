@@ -1,5 +1,5 @@
 .{
-    .name = .lumiAHCI,
+    .name = .lumiDisk,
     .version = "0.0.0",
 
     .dependencies = .{},
