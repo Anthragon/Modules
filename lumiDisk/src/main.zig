@@ -1,33 +1,28 @@
 const std = @import("std");
-const root = @import("root");
+const core = @import("root").lib;
 const lib = @import("lib");
-const modules = root.modules;
-const sys = root.system;
-const debug = root.debug;
-const capabilities = root.capabilities;
-const units = root.utils.units.data;
-const Guid = root.utils.Guid;
+const capabilities = core.capabilities;
 
 const log = std.log.scoped(.lumiDisk);
 
-const DiskEntry = lib.DiskEntry;
-const PartEntry = lib.PartitionEntry;
+const DiskEntry = core.common.DiskEntry;
+const PartEntry = core.common.PartEntry;
 
 // Module information
 pub const module_name: [*:0]const u8 =     "lumiDisk";
 pub const module_version: [*:0]const u8 =  "0.1.0";
 pub const module_author: [*:0]const u8 =   "lumi2021";
 pub const module_liscence: [*:0]const u8 = "MPL-2.0";
-pub const module_uuid: u128 = @bitCast(root.utils.Guid.fromString("eb896ec0-46ef-4996-a8ef-c82c4ac9f05f") catch unreachable);
+pub const module_uuid: u128 = @bitCast(core.utils.Guid.fromString("eb896ec0-46ef-4996-a8ef-c82c4ac9f05f") catch unreachable);
 
 pub fn init() callconv(.c) bool {
     log.info("Hello, lumiDisk!", .{});
 
-    arena = .init(root.mem.heap.kernel_buddy_allocator);
+    arena = .init(@import("root").mem.heap.kernel_buddy_allocator);
     allocator = arena.allocator();
 
-    const devices_node = capabilities.get_node_by_guid(Guid.fromString("753d870c-e51b-40d2-96b9-beb3bfa8cd02") catch unreachable) orelse return false;
-    mass_storage_resource = capabilities.create_resource(Guid.fromString("35d36bb8-62f0-43d6-a617-d0bac8069a16") catch unreachable, devices_node, "MassStorage") catch unreachable;
+    const devices_node = capabilities.get_node_by_guid(core.utils.Guid.fromString("753d870c-e51b-40d2-96b9-beb3bfa8cd02") catch unreachable) orelse return false;
+    mass_storage_resource = capabilities.create_resource(core.utils.Guid.fromString("35d36bb8-62f0-43d6-a617-d0bac8069a16") catch unreachable, devices_node, "MassStorage") catch unreachable;
 
     _ = capabilities.create_callable(mass_storage_resource, "lsblk", @ptrCast(&lsblk)) catch unreachable;
     _ = capabilities.create_callable(mass_storage_resource, "append_device", @ptrCast(&append_device)) catch unreachable;
@@ -58,7 +53,7 @@ fn append_device(
     vtable: *const DiskEntry.VTable,
 ) callconv(.c) void {
 
-    var entry = allocator.create(DiskEntry) catch root.oom_panic();
+    var entry = allocator.create(DiskEntry) catch @import("root").oom_panic();
     entry.* = .{
         .context = ctx,
         .sectors_length = seclen,
@@ -66,11 +61,11 @@ fn append_device(
         .global_identifier = null,
     };
     if (devtype != null) {
-        const copy = allocator.dupeZ(u8, std.mem.sliceTo(devtype.?, 0)) catch root.oom_panic();
+        const copy = allocator.dupeZ(u8, std.mem.sliceTo(devtype.?, 0)) catch @import("root").oom_panic();
         entry.type = copy;
     }
 
-    disk_list.append(allocator, entry) catch root.oom_panic();
+    disk_list.append(allocator, entry) catch @import("root").oom_panic();
     scan_disk(entry);
 }
 
@@ -126,19 +121,20 @@ fn lsblk() callconv(.c) void {
 
     for (disk_list.items) |i| {
         const ds = calc_size_and_unit(i.sectors_length);
-        log.info("{s: <15} Disk    {d: >5.2} {s: <6} {s}", .{ i.type, ds.@"0", units[ds.@"1"].name, i.global_identifier orelse "--" });
+        log.info("{s: <15} Disk    {d: >5.2} {s: <6} {s}", .{ i.type, ds.@"0", ds.@"1", i.global_identifier orelse "--" });
 
         for (0..i.partitions_length) |j| {
             const p = i.partitions[j];
             const ps = calc_size_and_unit(p.end_sector - p.start_sector);
-            log.info("   {s: <12} Part    {d: >5.2} {s: <6} {s}", .{ p.readable_name, ps.@"0", units[ps.@"1"].name, p.global_identifier orelse "--" });
+            log.info("   {s: <12} Part    {d: >5.2} {s: <6} {s}", .{ p.readable_name, ps.@"0", ps.@"1", p.global_identifier orelse "--" });
         }
     }
 
 }
 
-fn calc_size_and_unit(sectors: usize) struct { f64, usize } {
+fn calc_size_and_unit(sectors: usize) struct { f64, []const u8 } {
     const total_bytes = sectors * 512;
+    const units = core.utils.units.data;
 
     var i: usize = 0;
     while (true) : (i += 1) if (total_bytes >= units[i].size) break;
@@ -146,7 +142,7 @@ fn calc_size_and_unit(sectors: usize) struct { f64, usize } {
     const size_float: f64 = @floatFromInt(total_bytes);
     const unit_float: f64 = @floatFromInt(units[i].size);
 
-    return .{ size_float / unit_float, i };
+    return .{ size_float / unit_float, units[i].name };
 }
 
 const MBRPartition = packed struct {
@@ -156,7 +152,6 @@ const MBRPartition = packed struct {
     end_chs: u24,
     abs_start_chs: u32,
     sector_len: u32,
-
 
     const Status = enum(u8) {
         inactive = 0x00,

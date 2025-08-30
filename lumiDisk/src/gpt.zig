@@ -1,18 +1,16 @@
 const std = @import("std");
-const root = @import("root");
+const core = @import("root").lib;
 const lib = @import("lib");
 const main = @import("main.zig");
 
 const log = std.log.scoped(.@"lumiDisk GPT");
 
-const fs = root.fs;
-const FsNode = fs.FsNode;
 
-const DiskEntry = lib.DiskEntry;
-const PartitionEntry = lib.PartitionEntry;
-const Guid = root.utils.Guid;
+const DiskEntry = core.common.DiskEntry;
+const PartEntry = core.common.PartEntry;
+const Guid = core.utils.Guid;
 
-const allocator = root.os.heap.kernel_buddy_allocator;
+const allocator = @import("root").os.heap.kernel_buddy_allocator;
 
 pub fn analyze(sector: []u8, entry: *DiskEntry) !void {
 
@@ -20,18 +18,18 @@ pub fn analyze(sector: []u8, entry: *DiskEntry) !void {
     if (!std.mem.eql(u8, &header.signature, "EFI PART")) return error.WrongSignature;
 
     const disk_guid = std.fmt.allocPrintZ(
-        allocator, "{}", .{header.guid}) catch root.oom_panic();
+        allocator, "{}", .{header.guid}) catch @import("root").oom_panic();
     entry.global_identifier = disk_guid.ptr;
 
     const table_sectors = header.part_length / 4;
     
-    var entries_list: std.ArrayList(PartitionEntry) = .init(allocator);
+    var entries_list: std.ArrayList(PartEntry) = .init(allocator);
 
     for (0..table_sectors) |sector_offset| {
         const sector_index = header.part_start + sector_offset;
 
         try entry.read(sector_index, sector);
-        const entries = std.mem.bytesAsSlice(Header_PartitionEntry, sector);
+        const entries = std.mem.bytesAsSlice(Header_PartEntry, sector);
 
         for (entries) |i| {
             if (i.identifier.isZero()) continue;
@@ -39,20 +37,22 @@ pub fn analyze(sector: []u8, entry: *DiskEntry) !void {
             var namebuf: [64]u8 = undefined;
             _ = std.unicode.utf16LeToUtf8(&namebuf, &i.name) catch continue;
 
-            const guidbuf = std.fmt.allocPrintZ(allocator, "{}", .{i.identifier}) catch root.oom_panic();
+            const guidbuf = std.fmt.allocPrintZ(allocator, "{}", .{i.identifier}) catch @import("root").oom_panic();
     
             entries_list.append(.{
+                .file_system = null,
+                .fs_context = null,
                 .disk_parent = entry,
                 .start_sector = i.first_sector,
                 .end_sector = i.last_sector,
                 .global_identifier = guidbuf.ptr,
-                .readable_name = allocator.dupeZ(u8, &namebuf) catch root.oom_panic(),
-            }) catch root.oom_panic();
+                .readable_name = allocator.dupeZ(u8, &namebuf) catch @import("root").oom_panic(),
+            }) catch @import("root").oom_panic();
 
         }
     }
 
-    const slice = (entries_list.toOwnedSlice() catch root.oom_panic());
+    const slice = (entries_list.toOwnedSlice() catch @import("root").oom_panic());
     entry.partitions = slice.ptr;
     entry.partitions_length = slice.len;
 
@@ -76,7 +76,7 @@ const Header = extern struct {
     part_size: u32,
     part_crc32: u32,
 };
-const Header_PartitionEntry = extern struct {
+const Header_PartEntry = extern struct {
 
     type: Guid,
     identifier: Guid,

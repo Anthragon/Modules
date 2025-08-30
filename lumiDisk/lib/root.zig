@@ -1,13 +1,12 @@
-pub const DiskEntry = @import("DiskEntry.zig").DiskEntry;
-pub const PartitionEntry = @import("DiskEntry.zig").PartitionEntry;
+pub const core = @import("root").lib;
+pub const DiskEntry = core.common.DiskEntry;
+pub const PartEntry = core.common.PartEntry;
 
 pub const interop = .{
-    .DiskEntryWrapper = @import("interop/DirEntryWrapper.zigq").DiskEntryWrapper,
-
     .DiskEntry = .{
-        @TypeOf(DiskEntry.c_read),
+        .read = @TypeOf(DiskEntry.c_read),
     },
     .PartitionEntry = .{
-        @TypeOf(PartitionEntry.c_read)
+        .read = @TypeOf(PartEntry.c_read)
     }
 };
