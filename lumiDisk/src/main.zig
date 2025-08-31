@@ -120,29 +120,16 @@ fn scan_disk(disk_entry: *DiskEntry) void {
 fn lsblk() callconv(.c) void {
 
     for (disk_list.items) |i| {
-        const ds = calc_size_and_unit(i.sectors_length);
+        const ds = core.utils.units.calc(i.sectors_length*512, &core.utils.units.data);
         log.info("{s: <15} Disk    {d: >5.2} {s: <6} {s}", .{ i.type, ds.@"0", ds.@"1", i.global_identifier orelse "--" });
 
         for (0..i.partitions_length) |j| {
             const p = i.partitions[j];
-            const ps = calc_size_and_unit(p.end_sector - p.start_sector);
+            const ps = core.utils.units.calc((p.end_sector - p.start_sector)*512, &core.utils.units.data);
             log.info("   {s: <12} Part    {d: >5.2} {s: <6} {s}", .{ p.readable_name, ps.@"0", ps.@"1", p.global_identifier orelse "--" });
         }
     }
 
-}
-
-fn calc_size_and_unit(sectors: usize) struct { f64, []const u8 } {
-    const total_bytes = sectors * 512;
-    const units = core.utils.units.data;
-
-    var i: usize = 0;
-    while (true) : (i += 1) if (total_bytes >= units[i].size) break;
-
-    const size_float: f64 = @floatFromInt(total_bytes);
-    const unit_float: f64 = @floatFromInt(units[i].size);
-
-    return .{ size_float / unit_float, units[i].name };
 }
 
 const MBRPartition = packed struct {

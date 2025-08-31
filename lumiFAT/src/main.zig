@@ -6,7 +6,7 @@ const fat = @import("fat.zig");
 const log = std.log.scoped(.lumiFAT);
 
 var arena: std.heap.ArenaAllocator = undefined;
-var allocator: std.mem.Allocator = undefined;
+pub var allocator: std.mem.Allocator = undefined;
 
 // Module information
 pub const module_name: [*:0]const u8 = "lumiFAT";

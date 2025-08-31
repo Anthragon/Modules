@@ -17,6 +17,7 @@ content: union(enum) {
 
 const FatFileEntry = struct {
     cluster: usize,
+    size: usize,
 };
 const FatDirectoryEntry = struct {
     cluster: usize,
@@ -28,14 +29,18 @@ pub fn init_file(
     allocator: std.mem.Allocator,
     root: *FatRoot,
     name: []const u8,
-    start_cluster: *PartEntry
+    start_cluster: usize,
+    size: usize,
 ) *@This() {
 
     var this = allocator.create(@This()) catch @import("root").oom_panic();
     const name_copy = allocator.dupeZ(u8, name) catch @import("root").oom_panic();
     this.* = .{
         .root = root,
-        .content = .{ .file = .{ .cluster = start_cluster } },
+        .content = .{ .file = .{
+            .cluster = start_cluster,
+            .size = size,
+        }},
     };
 
     this.node = .{
@@ -52,14 +57,16 @@ pub fn init_dir(
     allocator: std.mem.Allocator,
     root: *FatRoot,
     name: []const u8,
-    start_cluster: *PartEntry
+    start_cluster: usize,
 ) *@This() {
 
     var this = allocator.create(@This()) catch @import("root").oom_panic();
     const name_copy = allocator.dupeZ(u8, name) catch @import("root").oom_panic();
     this.* = .{
         .root = root,
-        .content = .{ .dir = .{ .cluster = start_cluster } },
+        .content = .{ .dir = .{
+            .cluster = start_cluster,
+        }},
     };
 
     this.node = .{
@@ -81,7 +88,9 @@ pub fn deinit(allocator: std.mem.Allocator, s: @This()) void {
     allocator.destroy(s);
 }
 
-const file_vtable: FsNode.FsNodeVtable = .{};
+const file_vtable: FsNode.FsNodeVtable = .{
+    .get_size = file_get_size,
+};
 const dir_vtable: FsNode.FsNodeVtable = .{
     .append_node = dir_append,
     .get_child = dir_get_child,
@@ -115,4 +124,9 @@ fn dir_branch(s: *FsNode, path: [*:0]const u8) callconv(.c) Result(*FsNode) {
     _ = path;
 
     return .err(.outOfBounds);
+}
+
+fn file_get_size(s: *FsNode) callconv(.c) Result(usize) {
+    const ctx: *@This() = @fieldParentPtr("node", s);
+    return .val(ctx.content.file.size);
 }

@@ -36,6 +36,7 @@ pub fn deinit(allocator: std.mem.Allocator, s: *@This()) void {
 pub fn load_children(s: *@This(), alloc: std.mem.Allocator) void {
     
     const entries = fat.get_root_directory_entries(alloc, s.partition_entry);
+    defer alloc.free(entries);
 
     var long_name_buf: [256]u16 = undefined;
     var utf8_long_name_buf: [512]u8 = undefined;
@@ -73,16 +74,30 @@ pub fn load_children(s: *@This(), alloc: std.mem.Allocator) void {
                 const str_name = long_name orelse std.fmt.bufPrint(&name_buf, "{s}.{s}",
                     .{entry.get_name(), entry.get_extension()}) catch unreachable;
                 
-                //const start_cluster = entry.get_cluster().?;
+                const start_cluster = entry.get_cluster().?;
                 const size = entry.file_size;
 
-                std.log.info("fuck file {s} - {} bytes", .{ str_name, size });
+                const file_node = FatDirectoryEntry.init_file(
+                    alloc,
+                    s,
+                    str_name,
+                    start_cluster,
+                    size,
+                );
+                s.children.put(alloc, str_name, file_node) catch @import("root").oom_panic();
+
             } else {
                 const str_name = long_name orelse entry.get_name();
 
-                //const start_cluster = @as(u32, @intCast(entry.first_cluster_high)) << 16 | entry.first_cluster_low;
+                const start_cluster = @as(u32, @intCast(entry.first_cluster_high)) << 16 | entry.first_cluster_low;
 
-                std.log.info("fuck directory {s}", .{ str_name });
+                const file_node = FatDirectoryEntry.init_dir(
+                    alloc,
+                    s,
+                    str_name,
+                    start_cluster,
+                );
+                s.children.put(alloc, str_name, file_node) catch @import("root").oom_panic();
             }
         }
     }
@@ -110,12 +125,10 @@ fn append(s: *FsNode, node: *FsNode) callconv(.c) Result(void) {
 fn getchild(s: *FsNode, index: usize) callconv(.c) Result(*FsNode) {
     const ctx: *@This() = @fieldParentPtr("node", s);
 
-    std.log.info("Trying to get child at index {}", .{ index });
+    const val = ctx.children.values();
+    if (index >= val.len) return .err(.outOfBounds);
 
-    _ = ctx;
-    //_ = index;
-
-    return .err(.outOfBounds);
+    return .val(&val[index].node);
 }
 fn branch(s: *FsNode, path: [*:0]const u8) callconv(.c) Result(*FsNode) {
     const ctx: *@This() = @fieldParentPtr("node", s);
