@@ -80,13 +80,13 @@ fn scan_partition(part: *PartEntry) callconv(.c) bool {
 
     return true;
 }
-fn mount_partition(part: *PartEntry) callconv(.c) void {
+fn mount_partition(part: *PartEntry) callconv(.c) *core.common.FsNode {
     
     var buf: [512]u8 = undefined;
     _ = mass_storage.PartEntry__read(part, 0, &buf, 512);
     const bpb = std.mem.bytesToValue(BootSector, &buf);
 
-    log.info("{}", .{bpb});
+    log.debug("{}", .{bpb});
 
     const bytes_per_sector:usize = @intCast(bpb.bytes_per_sector);
     const total_sectors: usize = bpb.total_sectors();
@@ -133,7 +133,10 @@ fn mount_partition(part: *PartEntry) callconv(.c) void {
     const volume_label = std.mem.sliceTo(part.readable_name, 0);
     const fat_root = FatRootNode.init(allocator, volume_label, part);
     mountedList.append(allocator, fat_root) catch @import("root").oom_panic();
-    fs.chroot(&fat_root.node);
+
+    fat_root.load_children(allocator);
+
+    return &fat_root.node;
 }
 
 const BootSector = packed struct {
@@ -306,5 +309,5 @@ const DirEntryFileAttributes = packed struct(u8) {
 };
 
 
-const FatContext = fat.FatContex;
+const FatContext = fat.FatContext;
 const FatType = fat.FatSubType;

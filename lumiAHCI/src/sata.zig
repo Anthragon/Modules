@@ -95,14 +95,14 @@ fn read_sata(ctx: ?*anyopaque, sector: u64, buffer: [*]u8, len: usize) callconv(
     @memset(@as([*]u8, @ptrCast(cmdtbl))[0..total_prdt_size], 0);
 
     for (0 .. cmdheader.prdtl - 1) |i| {
-        const phys_buf = mem.physFromPtr(buf.ptr);
+        const phys_buf = mem.paging.physFromPtr(buf.ptr).?;
         cmdtbl.prdt_entry(i).dba =  @intCast(phys_buf & 0xFFFFFFFF);
         cmdtbl.prdt_entry(i).dbau = @intCast(phys_buf >> 32);
         cmdtbl.prdt_entry(i).i = 1;
         buf = buf[4096 ..];
     }
 
-    const phys_buf = mem.physFromPtr(buf.ptr);
+    const phys_buf = mem.paging.physFromPtr(buf.ptr).?;
     cmdtbl.prdt_entry(cmdheader.prdtl - 1).dba =  @truncate(phys_buf & 0xFFFFFFFF);
     cmdtbl.prdt_entry(cmdheader.prdtl - 1).dbau = @truncate(phys_buf >> 32);
     cmdtbl.prdt_entry(cmdheader.prdtl - 1).dbc = @truncate(buf.len - 1);
@@ -188,7 +188,7 @@ pub fn identify_sata(abar: *HBAMem, port: *HBAPort) !IdentifyDeviceData {
             (@as(u64, @intCast(cmdheader.ctbau)) << 32) | @as(u64, @intCast(cmdheader.ctba)));
         @memset(@as([*]u8, @ptrCast(cmdtbl))[0 .. @sizeOf(HBACMDTable) + @sizeOf(HBAPRDTEntry)], 0);
 
-        const phys_buf = mem.physFromPtr((&buf).ptr);
+        const phys_buf = mem.paging.physFromPtr((&buf).ptr).?;
         cmdtbl.prdt_entry(0).* = .{
             .dba  = @intCast(phys_buf & 0xFFFFFFFF),
             .dbau = @intCast(phys_buf >> 32),
