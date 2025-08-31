@@ -91,13 +91,14 @@ pub fn load_children(s: *@This(), alloc: std.mem.Allocator) void {
 
                 const start_cluster = @as(u32, @intCast(entry.first_cluster_high)) << 16 | entry.first_cluster_low;
 
-                const file_node = FatDirectoryEntry.init_dir(
+                const dir_node = FatDirectoryEntry.init_dir(
                     alloc,
                     s,
                     str_name,
                     start_cluster,
                 );
-                s.children.put(alloc, str_name, file_node) catch @import("root").oom_panic();
+                dir_node.load_children(alloc);
+                s.children.put(alloc, str_name, dir_node) catch @import("root").oom_panic();
             }
         }
     }

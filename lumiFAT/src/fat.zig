@@ -76,9 +76,9 @@ const DirEntryFileAttributes = packed struct(u8) {
 const log = std.log.scoped(.fatfs);
 
 fn get_next_cluster(
-    ctx: FatContext,
+    ctx: *const FatContext,
     current_cluster: usize,
-    disk: *core.common.DiskEntry,
+    part: *const core.common.PartEntry,
 ) ?usize {
     var buf: [512]u8 = undefined;
 
@@ -91,7 +91,7 @@ fn get_next_cluster(
         const sector_off = fat_index / 512;
         const rel_index = fat_index % 512;
 
-        disk.read(fat_start + sector_off, &buf) catch unreachable;
+        part.read(fat_start + sector_off, &buf) catch unreachable;
 
         log.debug("Seeking cluster {} of sector {} ({} in sector {} of fat table)...",
             .{fat_index, current_cluster, rel_index, sector_off});
@@ -101,26 +101,33 @@ fn get_next_cluster(
 
         log.debug("found cluster {} (0x{X:0>3})", .{cluster, cluster});
 
-        return if (cluster >= 0x002 and cluster <= 0xfef) (cluster - 2) else null;
+        return if (cluster >= 0x002 and cluster <= 0xfef) cluster else null;
     }
     else if (fat_t == .FAT16) {
         const fat_index = current_cluster * 2;
         const sector_off = fat_index / 512;
         const rel_index = fat_index % 512;
-        disk.read(fat_start + sector_off, &buf) catch unreachable;
+        part.read(fat_start + sector_off, &buf) catch unreachable;
 
         const cluster = std.mem.readInt(u16, buf[rel_index..][0..2], .little);
-        return if (cluster >= 0x0002 and cluster <= 0xffef) (cluster - 2) else null;
+        return if (cluster >= 0x0002 and cluster <= 0xffef) cluster else null;
     }
     else {
         const fat_index = current_cluster * 4;
         const sector_off = fat_index / 512;
         const rel_index = fat_index % 512;
-        disk.read(fat_start + sector_off, &buf) catch unreachable;
+        part.read(fat_start + sector_off, &buf) catch unreachable;
 
         const cluster = std.mem.readInt(u32, buf[rel_index..][0..4], .little);
-        return if (cluster >= 0x0000_0002 and cluster <= 0xffff_ffef) (cluster - 2) else null;
+        return if (cluster >= 0x0000_0002 and cluster <= 0xffff_ffef) cluster else null;
     }
+}
+
+pub inline fn sector_from_cluster(ctx: *const FatContext, cluster: usize) usize {
+    return ctx.data_start + cluster - 2;
+}
+pub inline fn cluster_from_sector(ctx: *const FatContext, sector: usize) usize {
+    return sector - ctx.data_start + 2;
 }
 
 pub fn get_root_directory_entries(allocator: std.mem.Allocator, part: *const core.common.PartEntry) []DirEntry {
@@ -156,5 +163,39 @@ pub fn get_root_directory_entries(allocator: std.mem.Allocator, part: *const cor
     }
     else @panic("TODO Fat32 get_root_directory_entries");
 }
+
+pub fn get_directory_entries(allocator: std.mem.Allocator, cluster: usize, part: *const core.common.PartEntry) []DirEntry {
+    const ctx: *FatContext = @ptrCast(@alignCast(part.fs_context));
+
+    var buffer = allocator.alignedAlloc(u8, @alignOf(DirEntry), 512) catch oom_panic();
+    var index: usize = 0;
+    var currcluster: ?usize = cluster;
+
+    const entries = b: {
+        while (currcluster != null) : ({
+            currcluster = get_next_cluster(ctx, currcluster.?, part);
+            index += 1;
+        }) {
+            const sector = sector_from_cluster(ctx, currcluster.?);
+
+            const nbs = (index+1) * 512;
+            if (allocator.resize(buffer, nbs)) buffer.len = nbs
+            else buffer = allocator.realloc(buffer, nbs) catch oom_panic();
+
+            const buf: []u8 = buffer[index*512..][0..512];
+            part.read(sector, buf) catch unreachable;
+
+            const entries = std.mem.bytesAsSlice(DirEntry, buf);
+            for (entries, 0..) |v, i| if (v.is_null()) break :b index*16 + i;
+
+        }
+        break :b index*16;
+    };
+
+    buffer = allocator.realloc(buffer, entries * 32) catch oom_panic();
+    return @alignCast(std.mem.bytesAsSlice(DirEntry, buffer));
+
+}
+
 
 fn oom_panic() noreturn { @import("root").oom_panic(); }
