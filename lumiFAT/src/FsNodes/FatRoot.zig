@@ -22,7 +22,7 @@ pub fn init(allocator: std.mem.Allocator, name: []const u8, entry: *const PartEn
         .type = "FAT partition",
         .type_id = "fatfs_root",
         .iterable = true,
-        .vtable = &vtable,
+        .vtable = &rootvtable,
     };
 
     return this;
@@ -84,7 +84,11 @@ pub fn load_children(s: *@This(), alloc: std.mem.Allocator) void {
                     start_cluster,
                     size,
                 );
-                s.children.put(alloc, str_name, file_node) catch @import("root").oom_panic();
+                s.children.put(
+                    alloc,
+                    std.mem.sliceTo(file_node.node.name, 0),
+                    file_node,
+                ) catch @import("root").oom_panic();
 
             } else {
                 const str_name = long_name orelse entry.get_name();
@@ -98,20 +102,22 @@ pub fn load_children(s: *@This(), alloc: std.mem.Allocator) void {
                     start_cluster,
                 );
                 dir_node.load_children(alloc);
-                s.children.put(alloc, str_name, dir_node) catch @import("root").oom_panic();
+                s.children.put(
+                    alloc,
+                    std.mem.sliceTo(dir_node.node.name, 0),
+                    dir_node,
+                ) catch @import("root").oom_panic();
             }
         }
     }
 
 }
 
-const vtable: FsNode.FsNodeVtable = .{
+const rootvtable: FsNode.FsNodeVtable = .{
     .append_node = append,
     .get_child = getchild,
     .branch = branch,
 };
-
-// Vtable functions after here
 
 fn append(s: *FsNode, node: *FsNode) callconv(.c) Result(void) {
     const ctx: *@This() = @fieldParentPtr("node", s);
@@ -134,8 +140,22 @@ fn getchild(s: *FsNode, index: usize) callconv(.c) Result(*FsNode) {
 fn branch(s: *FsNode, path: [*:0]const u8) callconv(.c) Result(*FsNode) {
     const ctx: *@This() = @fieldParentPtr("node", s);
 
-    _ = ctx;
-    _ = path;
+    const pathslice = std.mem.sliceTo(path, 0);
+    const i: usize = std.mem.indexOf(u8, pathslice, "/") orelse pathslice.len;
+    const nodename = pathslice[0..i];
 
-    return .err(.outOfBounds);
+    var vcdict = ctx.children;
+    if (vcdict.contains(nodename)) {
+        std.log.info("aaaaaaaaaaaa {s}", .{pathslice});
+        const node = vcdict.get(nodename).?;
+        if (i != pathslice.len) return node.node.branch(path[i+1..]);
+        return .val(&node.node);
+    }
+
+    std.log.info("{s} not found", .{ pathslice });
+    for (ctx.children.keys()) |j| {
+        std.log.info("{s}", .{j});
+    }
+
+    return .err(.invalidPath);
 }

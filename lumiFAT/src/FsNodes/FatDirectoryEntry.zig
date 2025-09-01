@@ -151,7 +151,11 @@ pub fn load_children(s: *@This(), alloc: std.mem.Allocator) void {
                     start_cluster,
                     size,
                 );
-                s.content.dir.children.put(alloc, str_name, file_node) catch @import("root").oom_panic();
+                s.content.dir.children.put(
+                    alloc,
+                    std.mem.sliceTo(file_node.node.name, 0),
+                    file_node,
+                ) catch @import("root").oom_panic();
 
             } else {
                 const str_name = long_name orelse entry.get_name();
@@ -166,7 +170,11 @@ pub fn load_children(s: *@This(), alloc: std.mem.Allocator) void {
                     start_cluster,
                 );
                 dir_node.load_children(alloc);
-                s.content.dir.children.put(alloc, str_name, dir_node) catch @import("root").oom_panic();
+                s.content.dir.children.put(
+                    alloc,
+                    std.mem.sliceTo(dir_node.node.name, 0),
+                    dir_node,
+                ) catch @import("root").oom_panic();
             }
         }
 
@@ -175,15 +183,16 @@ pub fn load_children(s: *@This(), alloc: std.mem.Allocator) void {
 }
 
 const file_vtable: FsNode.FsNodeVtable = .{
-    .get_size = file_get_size,
+    .get_size = file__get_size,
+    .read = file__read,
 };
 const dir_vtable: FsNode.FsNodeVtable = .{
-    .append_node = dir_append,
-    .get_child = dir_get_child,
-    .branch = dir_branch,
+    .append_node = dir__append,
+    .get_child = dir__get_child,
+    .branch = dir__branch,
 };
 
-fn dir_append(s: *FsNode, node: *FsNode) callconv(.c) Result(void) {
+fn dir__append(s: *FsNode, node: *FsNode) callconv(.c) Result(void) {
     const ctx: *@This() = @fieldParentPtr("node", s);
 
     _ = ctx;
@@ -193,14 +202,14 @@ fn dir_append(s: *FsNode, node: *FsNode) callconv(.c) Result(void) {
 
     //return .retvoid();
 }
-fn dir_get_child(s: *FsNode, index: usize) callconv(.c) Result(*FsNode) {
+fn dir__get_child(s: *FsNode, index: usize) callconv(.c) Result(*FsNode) {
     const ctx: *@This() = @fieldParentPtr("node", s);
 
     const children = ctx.content.dir.children.values();
     if (index >= children.len) return .err(.outOfBounds);
     return .val(&children[index].node);
 }
-fn dir_branch(s: *FsNode, path: [*:0]const u8) callconv(.c) Result(*FsNode) {
+fn dir__branch(s: *FsNode, path: [*:0]const u8) callconv(.c) Result(*FsNode) {
     const ctx: *@This() = @fieldParentPtr("node", s);
 
     _ = ctx;
@@ -209,7 +218,16 @@ fn dir_branch(s: *FsNode, path: [*:0]const u8) callconv(.c) Result(*FsNode) {
     return .err(.outOfBounds);
 }
 
-fn file_get_size(s: *FsNode) callconv(.c) Result(usize) {
+fn file__get_size(s: *FsNode) callconv(.c) Result(usize) {
     const ctx: *@This() = @fieldParentPtr("node", s);
     return .val(ctx.content.file.size);
+}
+fn file__read(s: *FsNode, buffer: [*]u8, len: usize) callconv(.c) Result(usize) {
+    const ctx: *@This() = @fieldParentPtr("node", s);
+    const start = ctx.content.file.cluster;
+
+    const buf = buffer[0..len];
+    const bytes_written = fat.read_file(start, buf, ctx.root.partition_entry);
+
+    return .val(bytes_written);
 }

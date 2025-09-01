@@ -197,5 +197,33 @@ pub fn get_directory_entries(allocator: std.mem.Allocator, cluster: usize, part:
 
 }
 
+pub fn read_file(cluster: usize, buffer: []u8, part: *const core.common.PartEntry) usize {
+    const ctx: *FatContext = @ptrCast(@alignCast(part.fs_context));
+
+    var index: usize = 0;
+    var cur_cluster: ?usize = cluster;
+    while (cur_cluster != null and (index+1)*512 < buffer.len) : ({
+        index += 1;
+        cur_cluster = get_next_cluster(ctx, cur_cluster.?, part);
+    }) {
+        const sector = sector_from_cluster(ctx, cur_cluster.?);
+        const bufslice = buffer[index*512 .. (index+1)*512];
+        part.read(sector, bufslice) catch return index*512;
+    }
+
+    // Check if EOC
+    if (cur_cluster == null) return index*512;
+
+    if (index*512 < buffer.len) {
+        var temp_buf: [512]u8 = undefined;
+        const sector = sector_from_cluster(ctx, cur_cluster.?);
+        part.read(sector, &temp_buf) catch return index*512;
+        const restslice = buffer[index * 512 ..];
+        @memcpy(restslice, temp_buf[0..restslice.len]);
+    }
+
+    return buffer.len;
+}
+
 
 fn oom_panic() noreturn { @import("root").oom_panic(); }
