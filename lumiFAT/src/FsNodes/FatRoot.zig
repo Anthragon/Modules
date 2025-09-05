@@ -10,9 +10,9 @@ const fat = @import("../fat.zig");
 node: FsNode = undefined,
 partition_entry: *const PartEntry,
 children: std.StringArrayHashMapUnmanaged(*FatDirectoryEntry) = .empty,
+virt_children: std.StringArrayHashMapUnmanaged(*FsNode) = .empty,
 
 pub fn init(allocator: std.mem.Allocator, name: []const u8, entry: *const PartEntry) *@This() {
-
     var this = allocator.create(@This()) catch @import("root").oom_panic();
     const name_copy = allocator.dupeZ(u8, name) catch @import("root").oom_panic();
     this.* = .{ .partition_entry = entry };
@@ -22,6 +22,7 @@ pub fn init(allocator: std.mem.Allocator, name: []const u8, entry: *const PartEn
         .type = "FAT partition",
         .type_id = "fatfs_root",
         .iterable = true,
+        .physical = true,
         .vtable = &rootvtable,
     };
 
@@ -34,7 +35,6 @@ pub fn deinit(allocator: std.mem.Allocator, s: *@This()) void {
 }
 
 pub fn load_children(s: *@This(), alloc: std.mem.Allocator) void {
-    
     const entries = fat.get_root_directory_entries(alloc, s.partition_entry);
     defer alloc.free(entries);
 
@@ -50,20 +50,16 @@ pub fn load_children(s: *@This(), alloc: std.mem.Allocator) void {
             const buf_u8 = @as([*]u8, @ptrCast(&long_name_buf));
             const buf_entry = std.mem.asBytes(&entry);
 
-            @memcpy(buf_u8[str_idx..],      buf_entry[0x01 .. 0x0B]); // 5 chars, 10 bytes
-            @memcpy(buf_u8[str_idx + 10..], buf_entry[0x0E .. 0x1A]); // 6 chars, 12 bytes
-            @memcpy(buf_u8[str_idx + 22..], buf_entry[0x1C .. 0x20]); // 2 chars, 4  bytes
-        }
-        else { // Is valid entry
-            
+            @memcpy(buf_u8[str_idx..], buf_entry[0x01..0x0B]); // 5 chars, 10 bytes
+            @memcpy(buf_u8[str_idx + 10 ..], buf_entry[0x0E..0x1A]); // 6 chars, 12 bytes
+            @memcpy(buf_u8[str_idx + 22 ..], buf_entry[0x1C..0x20]); // 2 chars, 4  bytes
+        } else { // Is valid entry
+
             var long_name: ?[]u8 = null;
 
             if (long_name_idx > 0) {
                 const str_idx = 256 - long_name_idx * 13;
-                _ = std.unicode.utf16LeToUtf8(
-                    &utf8_long_name_buf,
-                    long_name_buf[str_idx ..]
-                ) catch unreachable;
+                _ = std.unicode.utf16LeToUtf8(&utf8_long_name_buf, long_name_buf[str_idx..]) catch unreachable;
                 long_name = std.mem.sliceTo(&utf8_long_name_buf, 0);
             }
             long_name_idx = 0;
@@ -71,9 +67,8 @@ pub fn load_children(s: *@This(), alloc: std.mem.Allocator) void {
             var name_buf: [12]u8 = undefined;
 
             if (!entry.is_directory()) {
-                const str_name = long_name orelse std.fmt.bufPrint(&name_buf, "{s}.{s}",
-                    .{entry.get_name(), entry.get_extension()}) catch unreachable;
-                
+                const str_name = long_name orelse std.fmt.bufPrint(&name_buf, "{s}.{s}", .{ entry.get_name(), entry.get_extension() }) catch unreachable;
+
                 const start_cluster = entry.get_cluster().?;
                 const size = entry.file_size;
 
@@ -89,7 +84,6 @@ pub fn load_children(s: *@This(), alloc: std.mem.Allocator) void {
                     std.mem.sliceTo(file_node.node.name, 0),
                     file_node,
                 ) catch @import("root").oom_panic();
-
             } else {
                 const str_name = long_name orelse entry.get_name();
 
@@ -110,7 +104,6 @@ pub fn load_children(s: *@This(), alloc: std.mem.Allocator) void {
             }
         }
     }
-
 }
 
 const rootvtable: FsNode.FsNodeVtable = .{
@@ -148,11 +141,11 @@ fn branch(s: *FsNode, path: [*:0]const u8) callconv(.c) Result(*FsNode) {
     if (vcdict.contains(nodename)) {
         std.log.info("aaaaaaaaaaaa {s}", .{pathslice});
         const node = vcdict.get(nodename).?;
-        if (i != pathslice.len) return node.node.branch(path[i+1..]);
+        if (i != pathslice.len) return node.node.branch(path[i + 1 ..]);
         return .val(&node.node);
     }
 
-    std.log.info("{s} not found", .{ pathslice });
+    std.log.info("{s} not found", .{pathslice});
     for (ctx.children.keys()) |j| {
         std.log.info("{s}", .{j});
     }
