@@ -52,7 +52,6 @@ pub fn init() callconv(.c) bool {
 }
 pub fn deinit() callconv(.c) void {}
 
-
 const fsvtable: FileSystemEntry.VTable = .{
     .scan = scan_partition,
     .mount = mount_partition,
@@ -61,7 +60,6 @@ const fsvtable: FileSystemEntry.VTable = .{
 var mountedList: std.ArrayListUnmanaged(*FatRootNode) = .empty;
 
 fn scan_partition(part: *PartEntry) callconv(.c) bool {
-    
     var buf: [512]u8 = undefined;
     _ = mass_storage.PartEntry__read(part, 0, &buf, 512);
 
@@ -73,22 +71,18 @@ fn scan_partition(part: *PartEntry) callconv(.c) bool {
     //  69 ?? ??
     //  90 EB ??
 
-    if (buf[0] == 0xEB and buf[2] == 0x90) {}
-    else if (buf[0] == 0x90 and buf[1] == 0xEB) {}
-    else if (buf[0] == 0xE9 or buf[0] == 0x69) {}
-    else return false;
+    if (buf[0] == 0xEB and buf[2] == 0x90) {} else if (buf[0] == 0x90 and buf[1] == 0xEB) {} else if (buf[0] == 0xE9 or buf[0] == 0x69) {} else return false;
 
     return true;
 }
 fn mount_partition(part: *PartEntry) callconv(.c) *core.common.FsNode {
-    
     var buf: [512]u8 = undefined;
     _ = mass_storage.PartEntry__read(part, 0, &buf, 512);
     const bpb = std.mem.bytesToValue(BootSector, &buf);
 
-    log.debug("{}", .{bpb});
+    log.debug("{f}", .{bpb});
 
-    const bytes_per_sector:usize = @intCast(bpb.bytes_per_sector);
+    const bytes_per_sector: usize = @intCast(bpb.bytes_per_sector);
     const total_sectors: usize = bpb.total_sectors();
     const fat_sectors: usize = bpb.table_size();
     const num_fats: usize = @intCast(bpb.fat_table_count);
@@ -98,10 +92,8 @@ fn mount_partition(part: *PartEntry) callconv(.c) *core.common.FsNode {
     const fat_start = reserved_sectors;
     const fat_length = (fat_sectors * num_fats);
     const root_dir_table_start = fat_start + fat_length;
-    const root_dir_table_len = std.math.divCeil(usize,
-        root_entry_count * @sizeOf(DirEntry),
-        bytes_per_sector) catch unreachable;
-    
+    const root_dir_table_len = std.math.divCeil(usize, root_entry_count * @sizeOf(DirEntry), bytes_per_sector) catch unreachable;
+
     const data_start = root_dir_table_start + root_dir_table_len;
     const data_len: usize = total_sectors - data_start;
 
@@ -114,20 +106,7 @@ fn mount_partition(part: *PartEntry) callconv(.c) *core.common.FsNode {
     };
 
     const ctx = allocator.create(FatContext) catch @import("root").oom_panic();
-    ctx.* = .{
-        .bytes_per_sector = bytes_per_sector,
-        .sectors_per_cluster = bpb.sectors_per_cluster,
-        .fat_start = fat_start,
-        .fat_length = fat_length,
-        .fat_count = num_fats,
-        .root_dir = root_dir_table_start,
-        .root_len = root_dir_table_len,
-
-        .data_start = data_start,
-        .total_clusters = clusters,
-
-        .type = ftype
-    };
+    ctx.* = .{ .bytes_per_sector = bytes_per_sector, .sectors_per_cluster = bpb.sectors_per_cluster, .fat_start = fat_start, .fat_length = fat_length, .fat_count = num_fats, .root_dir = root_dir_table_start, .root_len = root_dir_table_len, .data_start = data_start, .total_clusters = clusters, .type = ftype };
     part.fs_context = ctx;
 
     const volume_label = std.mem.sliceTo(part.readable_name, 0);
@@ -148,10 +127,10 @@ const BootSector = packed struct {
     sectors_per_cluster: u8,
     reserved_sector_count: u16,
     fat_table_count: u8,
-    root_entry_count: u16,         //0x11
-    total_sectors_16: u16,         //0x13
-    media_descriptor: u8,          //0x15
-    table_size_16: u16,            //0x16
+    root_entry_count: u16, //0x11
+    total_sectors_16: u16, //0x13
+    media_descriptor: u8, //0x15
+    table_size_16: u16, //0x16
     // DOS 3.31 (0x18+)
     sectors_per_track: u16,
     head_side_count: u16,
@@ -174,9 +153,8 @@ const BootSector = packed struct {
             version: u16,
             root_directory: u32,
             // too lazy to continue
-        }
+        },
     },
-    
 
     // FAT32 Extended (0x)
 
@@ -185,23 +163,20 @@ const BootSector = packed struct {
     }
 
     pub fn total_sectors(s: *const @This()) usize {
-        return if (s.total_sectors_16 == 0) s.total_sectors_32
-        else s.total_sectors_16;
+        return if (s.total_sectors_16 == 0) s.total_sectors_32 else s.total_sectors_16;
     }
     pub fn table_size(s: *const @This()) usize {
-        return if (s.table_size_16 == 0) s.extended.fat32.table_size_32
-        else s.table_size_16;
+        return if (s.table_size_16 == 0) s.extended.fat32.table_size_32 else s.table_size_16;
     }
 
-    pub fn format(s: *const @This(), comptime _: []const u8, _: std.fmt.FormatOptions, fmt: anytype) !void {
-
+    pub fn format(s: *const @This(), fmt: anytype) !void {
         const jmp = std.mem.asBytes(&s.jump);
 
-        try fmt.print("0x{x:0>4} - ", .{ @offsetOf(BootSector, "jump") });
+        try fmt.print("0x{x:0>4} - ", .{@offsetOf(BootSector, "jump")});
         try fmt.print("Jump:                          {x:0>2} {x:0>2} {x:0>2}\n", .{ jmp[0], jmp[1], jmp[2] });
 
-        try fmt.print("0x{x:0>4} - ", .{ @offsetOf(BootSector, "_oem_name") });
-        try fmt.print("OEM Name:                      {s}\n", .{ s.oem_name() });
+        try fmt.print("0x{x:0>4} - ", .{@offsetOf(BootSector, "_oem_name")});
+        try fmt.print("OEM Name:                      {s}\n", .{s.oem_name()});
 
         try fmt_field_w_address(fmt, s, "Bytes/Sector:", "bytes_per_sector", "{}");
         try fmt_field_w_address(fmt, s, "Sectors/Cluster:", "sectors_per_cluster", "{}");
@@ -224,9 +199,9 @@ const BootSector = packed struct {
         comptime field_name: []const u8,
         comptime value_fmt: []const u8,
     ) !void {
-        try fmt.print("0x{x:0>4} - ", .{ @offsetOf(BootSector, field_name) });
+        try fmt.print("0x{x:0>4} - ", .{@offsetOf(BootSector, field_name)});
         try fmt.writeAll(std.fmt.comptimePrint("{s: <30} ", .{display_name}));
-        try fmt.print(value_fmt, .{ @field(bpb, field_name) });
+        try fmt.print(value_fmt, .{@field(bpb, field_name)});
         try fmt.writeByte('\n');
     }
     fn fmt_field_n_address(
@@ -286,17 +261,7 @@ const DirEntry = extern struct {
     }
 };
 
-pub const FileSystem_FAT_Data = struct {
-    fat_type: FatType,
-
-    fat_table_ptr: usize,
-    fat_table_len: usize,
-
-    root_dir_ptr: usize,
-    root_dir_len: usize,
-
-    data_start_ptr: usize
-};
+pub const FileSystem_FAT_Data = struct { fat_type: FatType, fat_table_ptr: usize, fat_table_len: usize, root_dir_ptr: usize, root_dir_len: usize, data_start_ptr: usize };
 
 const DirEntryFileAttributes = packed struct(u8) {
     read_only: bool,
@@ -307,7 +272,6 @@ const DirEntryFileAttributes = packed struct(u8) {
     dirty: bool,
     _reserved_0: u2,
 };
-
 
 const FatContext = fat.FatContext;
 const FatType = fat.FatSubType;

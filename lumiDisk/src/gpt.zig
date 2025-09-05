@@ -5,7 +5,6 @@ const main = @import("main.zig");
 
 const log = std.log.scoped(.@"lumiDisk GPT");
 
-
 const DiskEntry = core.common.DiskEntry;
 const PartEntry = core.common.PartEntry;
 const Guid = core.utils.Guid;
@@ -13,17 +12,15 @@ const Guid = core.utils.Guid;
 const allocator = @import("root").os.heap.kernel_buddy_allocator;
 
 pub fn analyze(sector: []u8, entry: *DiskEntry) !void {
-
     const header = std.mem.bytesToValue(Header, sector);
     if (!std.mem.eql(u8, &header.signature, "EFI PART")) return error.WrongSignature;
 
-    const disk_guid = std.fmt.allocPrintZ(
-        allocator, "{}", .{header.guid}) catch @import("root").oom_panic();
+    const disk_guid = std.fmt.allocPrintSentinel(allocator, "{f}", .{header.guid}, 0) catch @import("root").oom_panic();
     entry.global_identifier = disk_guid.ptr;
 
     const table_sectors = header.part_length / 4;
-    
-    var entries_list: std.ArrayList(PartEntry) = .init(allocator);
+
+    var entries_list: std.ArrayList(PartEntry) = .empty;
 
     for (0..table_sectors) |sector_offset| {
         const sector_index = header.part_start + sector_offset;
@@ -37,9 +34,9 @@ pub fn analyze(sector: []u8, entry: *DiskEntry) !void {
             var namebuf: [64]u8 = undefined;
             _ = std.unicode.utf16LeToUtf8(&namebuf, &i.name) catch continue;
 
-            const guidbuf = std.fmt.allocPrintZ(allocator, "{}", .{i.identifier}) catch @import("root").oom_panic();
-    
-            entries_list.append(.{
+            const guidbuf = std.fmt.allocPrintSentinel(allocator, "{f}", .{i.identifier}, 0) catch @import("root").oom_panic();
+
+            entries_list.append(allocator, .{
                 .file_system = null,
                 .fs_context = null,
                 .disk_parent = entry,
@@ -48,14 +45,12 @@ pub fn analyze(sector: []u8, entry: *DiskEntry) !void {
                 .global_identifier = guidbuf.ptr,
                 .readable_name = allocator.dupeZ(u8, &namebuf) catch @import("root").oom_panic(),
             }) catch @import("root").oom_panic();
-
         }
     }
 
-    const slice = (entries_list.toOwnedSlice() catch @import("root").oom_panic());
+    const slice = (entries_list.toOwnedSlice(allocator) catch @import("root").oom_panic());
     entry.partitions = slice.ptr;
     entry.partitions_length = slice.len;
-
 }
 
 const Header = extern struct {
@@ -77,12 +72,10 @@ const Header = extern struct {
     part_crc32: u32,
 };
 const Header_PartEntry = extern struct {
-
     type: Guid,
     identifier: Guid,
     first_sector: u64,
     last_sector: u64,
     attribute: u64,
     name: [36]u16,
-
 };

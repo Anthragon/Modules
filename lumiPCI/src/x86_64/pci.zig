@@ -14,37 +14,46 @@ const DeviceList = main.DeviceList;
 
 // TODO implement PCI domains (Usually not present in PCs but meh)
 
-pub fn list_devices(list: *DeviceList) !void {
-
+pub fn list_devices(alloc: std.mem.Allocator, list: *DeviceList) !void {
     log.info("Scanning bus root...", .{});
-    bus_scan(0, list);
-    log.info("Scan complete! ({} devices found)", .{ list.items.len });
-
+    bus_scan(alloc, 0, list);
+    log.info("Scan complete! ({} devices found)", .{list.items.len});
 }
 
-
-fn bus_scan(bus: u8, list: *DeviceList) void {
+fn bus_scan(alloc: std.mem.Allocator, bus: u8, list: *DeviceList) void {
     inline for (0..(1 << 5)) |device| {
-        device_scan(bus, @intCast(device), list);
+        device_scan(
+            alloc,
+            bus,
+            @intCast(device),
+            list,
+        );
     }
 }
 
-pub fn device_scan(bus: u8, device: u5, list: *DeviceList) void {
+pub fn device_scan(alloc: std.mem.Allocator, bus: u8, device: u5, list: *DeviceList) void {
     const nullfunc: Addr = .{ .bus = bus, .device = device, .function = 0 };
 
     if (nullfunc.header_type().read() == 0xFFFF) return;
 
-    function_scan(nullfunc, list) catch |err| log.debug("Could not list device: {s}", .{@errorName(err)});
+    function_scan(
+        alloc,
+        nullfunc,
+        list,
+    ) catch |err| log.debug("Could not list device: {s}", .{@errorName(err)});
 
     if (nullfunc.header_type().read() & 0x80 == 0) return;
 
     inline for (0..((1 << 3) - 1)) |function| {
-        function_scan(.{ .bus = bus, .device = device, .function = @intCast(function + 1) }, list)
-            catch |err| log.debug("Could not list device: {s}", .{@errorName(err)});
+        function_scan(alloc, .{
+            .bus = bus,
+            .device = device,
+            .function = @intCast(function + 1),
+        }, list) catch |err| log.debug("Could not list device: {s}", .{@errorName(err)});
     }
 }
 
-pub fn function_scan(addr: Addr, list: *DeviceList) !void {
+pub fn function_scan(alloc: std.mem.Allocator, addr: Addr, list: *DeviceList) !void {
     if (addr.vendor_id().read() == 0xFFFF) return;
 
     // Append devices to the devices list
@@ -52,7 +61,6 @@ pub fn function_scan(addr: Addr, list: *DeviceList) !void {
 
     // Bridge device
     if (addr.base_class().read() == 0x06) {
-
         var still_unrecognized = false;
 
         switch (addr.sub_class().read()) {
@@ -60,27 +68,21 @@ pub fn function_scan(addr: Addr, list: *DeviceList) !void {
             0x04 => {
                 log.debug("PCI-to-PCI bridge", .{});
                 if ((addr.header_type().read() & 0x7F) != 0x01) {
-
                     log.debug(" (Not PCI-to-PCI bridge header type!)", .{});
-
                 } else {
-
                     const secondary_bus = addr.secondary_bus().read();
                     log.debug(", recursively scanning bus {0X}", .{secondary_bus});
-                    bus_scan(secondary_bus, list);
-                    
+                    bus_scan(alloc, secondary_bus, list);
                 }
             },
-            else => still_unrecognized = true
+            else => still_unrecognized = true,
         }
 
         if (!still_unrecognized) return;
     }
 
-    const new_device = try list.allocator.create(PciDevice);
-    errdefer list.allocator.destroy(new_device);
+    const new_device = try alloc.create(PciDevice);
+    errdefer alloc.destroy(new_device);
     new_device.* = .{ .addr = addr };
-    try list.append(new_device);
-
+    try list.append(alloc, new_device);
 }
-

@@ -45,7 +45,7 @@ pub fn init() callconv(.c) bool {
     allocator = arena.allocator();
 
     // Initializing device list with scoped allocator
-    dev_list = .init(allocator);
+    dev_list = .empty;
 
     // Creating the resource interfaces
     const devices_node = capabilities.get_node_by_guid(Guid.fromString("753d870c-e51b-40d2-96b9-beb3bfa8cd02") catch unreachable);
@@ -70,8 +70,8 @@ var pci_probe_callbacks: std.ArrayListUnmanaged(PciDeviceProbeEntry) = .empty;
 var dev_list: DeviceList = undefined;
 
 pub fn list_pci_devices() !void {
-    dev_list.clearAndFree();
-    try internal.list_devices(&dev_list);
+    dev_list.clearAndFree(allocator);
+    try internal.list_devices(allocator, &dev_list);
 }
 
 fn on_pci_device_probe_bind(callback: *const anyopaque, ctx: ?*anyopaque) callconv(.c) bool {
