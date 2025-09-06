@@ -1,8 +1,12 @@
 .{
     .name = .lumiDisk,
     .version = "0.0.0",
+    .fingerprint = 0xf17c318950e795e8,
 
     .dependencies = .{},
 
-    .paths = .{ "build.zig", "build.zig.zon" },
+    .paths = .{
+        "build.zig",
+        "build.zig.zon",
+    },
 }
