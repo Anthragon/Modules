@@ -118,6 +118,7 @@ fn scan_disk(disk_entry: *DiskEntry) void {
 
 
 fn lsblk() callconv(.c) void {
+    log.warn("lsblk", .{});
 
     for (disk_list.items) |i| {
         const ds = core.utils.units.calc(i.sectors_length*512, &core.utils.units.data);

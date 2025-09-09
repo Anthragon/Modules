@@ -130,7 +130,7 @@ fn probe_single(func: DeviceProbeCallback, query: [*]const PciDeviceQuery) void 
 }
 
 fn lspci() callconv(.c) void {
-    log.info("Listing PCI devices:", .{});
+    log.warn("lspci", .{});
 
     for (dev_list.items) |i| {
         log.info("{X:0>2}:{X:0>2}.{X:0>1} [{X:0>2}:{X:0>2}] {s}: [{X:0>4}] {s} - [{X:0>4}] {s}", .{ i.get_bus(), i.get_device(), i.get_function(), i.addr.base_class().read(), i.addr.sub_class().read(), i.type_str, i.addr.vendor_id().read(), i.vendor_str, i.addr.device_id().read(), i.name_str });

@@ -75,7 +75,7 @@ fn scan_partition(part: *PartEntry) callconv(.c) bool {
 
     return true;
 }
-fn mount_partition(part: *PartEntry) callconv(.c) *core.common.FsNode {
+fn mount_partition(part: *PartEntry) callconv(.c) core.common.FsNode {
     var buf: [512]u8 = undefined;
     _ = mass_storage.PartEntry__read(part, 0, &buf, 512);
     const bpb = std.mem.bytesToValue(BootSector, &buf);
@@ -115,7 +115,7 @@ fn mount_partition(part: *PartEntry) callconv(.c) *core.common.FsNode {
 
     fat_root.load_children(allocator);
 
-    return &fat_root.node;
+    return fat_root.get_node();
 }
 
 const BootSector = packed struct {

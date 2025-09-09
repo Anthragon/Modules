@@ -8,8 +8,14 @@ const Result = core.interop.Result;
 const FatRoot = @import("FatRoot.zig");
 const FatContext = fat.FatContex;
 
-node: FsNode = undefined,
+const log = std.log.scoped(.@"FAT entry");
+
+uses: usize = 0,
+deleted: bool = false,
+
+name: [:0]const u8,
 root: *FatRoot,
+
 content: union(enum) {
     file: FatFileContentEntry,
     dir: FatDirContentEntry,
@@ -23,7 +29,7 @@ const FatFileContentEntry = struct {
 };
 const FatDirContentEntry = struct {
     cluster: usize,
-    children: std.StringArrayHashMapUnmanaged(*FatDirectoryEntry) = .empty,
+    children: std.StringArrayHashMapUnmanaged(FsNode) = .empty,
 };
 
 pub fn init_file(
@@ -33,23 +39,15 @@ pub fn init_file(
     start_cluster: usize,
     size: usize,
 ) *@This() {
-    var this = allocator.create(@This()) catch @import("root").oom_panic();
+    const this = allocator.create(@This()) catch @import("root").oom_panic();
     const name_copy = allocator.dupeZ(u8, name) catch @import("root").oom_panic();
     this.* = .{
+        .name = name_copy,
         .root = root,
         .content = .{ .file = .{
             .cluster = start_cluster,
             .size = size,
         } },
-    };
-
-    this.node = .{
-        .name = name_copy,
-        .type = "File",
-        .type_id = "fatfs_file",
-        .iterable = false,
-        .physical = true,
-        .vtable = &file_vtable,
     };
 
     return this;
@@ -60,25 +58,49 @@ pub fn init_dir(
     name: []const u8,
     start_cluster: usize,
 ) *@This() {
-    var this = allocator.create(@This()) catch @import("root").oom_panic();
+    const this = allocator.create(@This()) catch @import("root").oom_panic();
     const name_copy = allocator.dupeZ(u8, name) catch @import("root").oom_panic();
     this.* = .{
+        .name = name_copy,
         .root = root,
         .content = .{ .dir = .{
             .cluster = start_cluster,
         } },
     };
 
-    this.node = .{
-        .name = name_copy,
-        .type = "Directory",
-        .type_id = "fatfs_directory",
-        .iterable = true,
-        .physical = true,
-        .vtable = &dir_vtable,
-    };
-
     return this;
+}
+
+pub fn get_node(s: *@This()) FsNode {
+    s.uses += 1;
+    return switch (s.content) {
+        .file => .{
+            .context = @ptrCast(s),
+            .name = s.name,
+            .type = "File",
+            .type_id = "fatfs,file",
+            .flags = .{
+                .iterable = false,
+                .physical = true,
+                .readable = true,
+                .writeable = true,
+            },
+            .vtable = &file_vtable,
+        },
+        .dir => .{
+            .context = @ptrCast(s),
+            .name = s.name,
+            .type = "Directory",
+            .type_id = "fatfs,dir",
+            .flags = .{
+                .iterable = true,
+                .physical = true,
+                .readable = false,
+                .writeable = false,
+            },
+            .vtable = &dir_vtable,
+        },
+    };
 }
 
 pub fn deinit(allocator: std.mem.Allocator, s: @This()) void {
@@ -134,7 +156,7 @@ pub fn load_children(s: *@This(), alloc: std.mem.Allocator) void {
                 const size = entry.file_size;
 
                 std.log.debug("Creating file entry {s}", .{str_name});
-                const file_node = FatDirectoryEntry.init_file(
+                const new_file = FatDirectoryEntry.init_file(
                     alloc,
                     s.root,
                     str_name,
@@ -143,8 +165,8 @@ pub fn load_children(s: *@This(), alloc: std.mem.Allocator) void {
                 );
                 s.content.dir.children.put(
                     alloc,
-                    std.mem.sliceTo(file_node.node.name, 0),
-                    file_node,
+                    std.mem.sliceTo(new_file.name, 0),
+                    new_file.get_node(),
                 ) catch @import("root").oom_panic();
             } else {
                 const str_name = long_name orelse entry.get_name();
@@ -161,8 +183,8 @@ pub fn load_children(s: *@This(), alloc: std.mem.Allocator) void {
                 dir_node.load_children(alloc);
                 s.content.dir.children.put(
                     alloc,
-                    std.mem.sliceTo(dir_node.node.name, 0),
-                    dir_node,
+                    std.mem.sliceTo(dir_node.name, 0),
+                    dir_node.get_node(),
                 ) catch @import("root").oom_panic();
             }
         }
@@ -170,51 +192,72 @@ pub fn load_children(s: *@This(), alloc: std.mem.Allocator) void {
 }
 
 const file_vtable: FsNode.FsNodeVtable = .{
+    .open = open,
+    .close = close,
     .get_size = file__get_size,
     .read = file__read,
 };
 const dir_vtable: FsNode.FsNodeVtable = .{
+    .open = open,
+    .close = close,
     .append_node = dir__append,
     .get_child = dir__get_child,
     .branch = dir__branch,
 };
 
-fn dir__append(s: *FsNode, node: *FsNode) callconv(.c) Result(void) {
-    const ctx: *@This() = @fieldParentPtr("node", s);
+fn open(ctx: *anyopaque) callconv(.c) FsNode {
+    const s: *@This() = @ptrCast(@alignCast(ctx));
+    return s.get_node();
+}
+fn close(ctx: *anyopaque) callconv(.c) void {
+    const s: *@This() = @ptrCast(@alignCast(ctx));
+    s.uses -= 1;
+}
 
-    _ = ctx;
+fn dir__append(ctx: *anyopaque, node: FsNode) callconv(.c) Result(void) {
+    const s: *@This() = @ptrCast(@alignCast(ctx));
+
+    _ = s;
     _ = node;
 
     @panic("FAT file saving not implemented!");
 
     //return .retvoid();
 }
-fn dir__get_child(s: *FsNode, index: usize) callconv(.c) Result(*FsNode) {
-    const ctx: *@This() = @fieldParentPtr("node", s);
+fn dir__get_child(ctx: *anyopaque, index: usize) callconv(.c) Result(FsNode) {
+    var s: *@This() = @ptrCast(@alignCast(ctx));
 
-    const children = ctx.content.dir.children.values();
-    if (index >= children.len) return .err(.outOfBounds);
-    return .val(&children[index].node);
+    if (index >= s.content.dir.children.count()) return .err(.outOfBounds);
+    const children = s.content.dir.children.values();
+    return .val(children[index].open());
 }
-fn dir__branch(s: *FsNode, path: [*:0]const u8) callconv(.c) Result(*FsNode) {
-    const ctx: *@This() = @fieldParentPtr("node", s);
+fn dir__branch(ctx: *anyopaque, path: [*:0]const u8) callconv(.c) Result(FsNode) {
+    const s: *@This() = @ptrCast(@alignCast(ctx));
 
-    _ = ctx;
-    _ = path;
+    const pathslice = std.mem.sliceTo(path, 0);
+    const i: usize = std.mem.indexOf(u8, pathslice, "/") orelse pathslice.len;
+    const nodename = pathslice[0..i];
 
-    return .err(.outOfBounds);
+    var cdict = s.content.dir.children;
+    if (cdict.contains(nodename)) {
+        const node = cdict.get(nodename).?;
+        if (i != pathslice.len) return node.branch(path[i + 1 ..]);
+        return .val(node.open());
+    }
+
+    return .err(.invalidPath);
 }
 
-fn file__get_size(s: *FsNode) callconv(.c) Result(usize) {
-    const ctx: *@This() = @fieldParentPtr("node", s);
-    return .val(ctx.content.file.size);
+fn file__get_size(ctx: *anyopaque) callconv(.c) Result(usize) {
+    const s: *@This() = @ptrCast(@alignCast(ctx));
+    return .val(s.content.file.size);
 }
-fn file__read(s: *FsNode, buffer: [*]u8, len: usize) callconv(.c) Result(usize) {
-    const ctx: *@This() = @fieldParentPtr("node", s);
-    const start = ctx.content.file.cluster;
+fn file__read(ctx: *anyopaque, buffer: [*]u8, len: usize) callconv(.c) Result(usize) {
+    const s: *@This() = @ptrCast(@alignCast(ctx));
+    const start = s.content.file.cluster;
 
     const buf = buffer[0..len];
-    const bytes_written = fat.read_file(start, buf, ctx.root.partition_entry);
+    const bytes_written = fat.read_file(start, buf, s.root.partition_entry);
 
     return .val(bytes_written);
 }
