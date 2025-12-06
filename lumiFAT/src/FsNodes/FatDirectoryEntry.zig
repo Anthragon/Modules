@@ -245,7 +245,7 @@ fn dir__branch(ctx: *anyopaque, path: [*:0]const u8) callconv(.c) Result(FsNode)
         return .val(node.open());
     }
 
-    return .err(.invalidPath);
+    return .err(.notFound);
 }
 
 fn file__get_size(ctx: *anyopaque) callconv(.c) Result(usize) {
