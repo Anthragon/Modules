@@ -3,7 +3,6 @@ const root = @import("root");
 const pci = @import("pci_lib");
 const disk = @import("disk_lib");
 const modules = root.modules;
-const sys = root.system;
 const capabilities = root.capabilities;
 
 const log = std.log.scoped(.lumiAHCI);
@@ -23,10 +22,7 @@ pub const module_author: [*:0]const u8 = "lumi2021";
 pub const module_liscence: [*:0]const u8 = "MPL-2.0";
 pub const module_uuid: u128 = @bitCast(root.utils.Guid.fromString("37df8d37-d77c-4f86-bb99-514b542b23da") catch unreachable);
 
-pub var pci_dynamic: struct {
-    lspci:  *const fn () callconv(.c) void,
-    device_probe: *capabilities.Event
-} = undefined;
+pub var pci_dynamic: struct { lspci: *const fn () callconv(.c) void, device_probe: *capabilities.Event } = undefined;
 pub var disk_dynamic: struct {
     append_device: *const fn (*anyopaque, ?[*:0]const u8, usize, *const disk.DiskEntry.VTable) callconv(.c) void,
 } = undefined;
@@ -44,7 +40,7 @@ pub fn init() callconv(.c) bool {
 
     pci_dynamic.lspci = @ptrCast((capabilities.get_node("Devices.PCI.lspci") orelse return false).data.callable);
     pci_dynamic.device_probe = &(capabilities.get_node("Devices.PCI.device_probe") orelse return false).data.event;
-    
+
     disk_dynamic.append_device = @ptrCast((capabilities.get_node("Devices.MassStorage.append_device") orelse return false).data.callable);
 
     const res = pci_dynamic.device_probe.bind(
@@ -75,11 +71,18 @@ pub fn device_probe(dev: *PciDevice) callconv(.c) bool {
     // Allocate the memory for the device bar
     const bar_info = dev.addr.barinfo(5);
     log.debug("Bar info: ptr: {X}, size: {} bytes", .{ bar_info.phy, bar_info.size });
-    const bar_size_aligned = std.mem.alignForward(usize, bar_info.size, sys.pmm.page_size);
+    const bar_size_aligned = std.mem.alignForward(usize, bar_info.size, root.mem.page_size);
     const allocation = root.mem.heap.kernel_page_allocator.reserve(bar_size_aligned, .@"1");
 
     // Remapping pages
-    root.system.mem_paging.map_range(bar_info.phy, allocation, bar_size_aligned, .{ .disable_cache = true, .execute = false, .privileged = true, .read = true, .write = true, .lock = true }) catch |err| {
+    root.mem.paging.map_range(bar_info.phy, allocation, bar_size_aligned, .{
+        .disable_cache = true,
+        .execute = false,
+        .privileged = true,
+        .read = true,
+        .write = true,
+        .lock = true,
+    }) catch |err| {
         // Mapping error! free the allocation and return false
         root.mem.heap.kernel_page_allocator.free(allocation);
         log.debug("Error! {s}", .{@errorName(err)});
@@ -89,7 +92,15 @@ pub fn device_probe(dev: *PciDevice) callconv(.c) bool {
     // Get the abar pointer and iterate for all the
     // controller's ports
     const abar: *HBAMem = @ptrFromInt(allocation);
+    abar.ghc |= 0b01;
     iterate_ports(abar);
+
+    // Settup the interruption vector
+     const int_vector = dev.addr.int_line().read();
+    root.interrupts.unmask_irq(int_vector);
+
+    abar.ghc |= 0b10;
+    abar.interrupt_status = 0;
 
     return true;
 }
@@ -123,10 +134,13 @@ fn iterate_ports(abar: *HBAMem) void {
             if (dt == .sata) {
                 log.debug("SATA drive found in port {}", .{i});
                 sata.init_disk(abar, port) catch log.debug("Error while initializing SATA", .{});
+            } else if (dt == .satapi) {
+                log.debug("SATAPI drive found in port {}. Not implemented!", .{i});
+            } else if (dt == .semb) {
+                log.debug("SEMB drive found in port {}. Not implemented!", .{i});
+            } else if (dt == .pm) {
+                log.debug("PM drive found in port {}. Not implemented!", .{i});
             }
-            else if (dt == .satapi) { log.debug("SATAPI drive found in port {}. Not implemented!", .{i}); }
-            else if (dt == .semb) { log.debug("SEMB drive found in port {}. Not implemented!", .{i}); }
-            else if (dt == .pm) { log.debug("PM drive found in port {}. Not implemented!", .{i}); }
         }
     }
 }
@@ -270,7 +284,7 @@ pub const FISDMASetup = packed struct { fis_type: u8, pmport: u4, _reserved_0: u
 pub const HBAMem = extern struct {
     cap: u32,
     ghc: u32,
-    is: u32,
+    interrupt_status: u32,
     pi: u32,
     vs: u32,
     ccc_ctl: u32,
@@ -297,8 +311,8 @@ pub const HBAPort = extern struct {
     clbu: u32,
     fb: u32,
     fbu: u32,
-    is: u32,
-    ie: u32,
+    interrupt_status: HBAInterrupts,
+    interrupt_enable: HBAInterrupts,
     cmd: u32,
     _reserved_0: u32,
     tfd: u32,
@@ -366,3 +380,18 @@ pub const HBACMDTable = extern struct {
     }
 };
 pub const HBAPRDTEntry = packed struct { dba: u32, dbau: u32, _reserved_0: u32 = 0, dbc: u22, _reserved_1: u9 = 0, i: u1 };
+
+const HBAInterrupts = packed struct(u32) {
+    device_to_host: bool,
+    PIO_setup: bool,
+    DMA_setup: bool,
+    set_device_bits: bool,
+    descriptor_processed: bool,
+    _rsvd_0: u25 = 0,
+    task_file_error: bool,
+    command_completion: bool,
+
+    pub fn clear() @This() {
+        return @bitCast(@as(u32, 1));
+    }
+};

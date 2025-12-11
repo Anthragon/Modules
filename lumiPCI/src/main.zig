@@ -2,11 +2,10 @@ const std = @import("std");
 const root = @import("root");
 const lib = @import("lib");
 const modules = root.modules;
-const sys = root.system;
 const capabilities = root.capabilities;
 const Guid = root.utils.Guid;
 
-pub const internal = switch (sys.arch) {
+pub const internal = switch (@import("builtin").cpu.arch) {
     //.x86 => ,
     .x86_64 => @import("x86_64/pci.zig"),
     //.aarch64 => ,

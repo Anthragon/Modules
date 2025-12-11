@@ -1,8 +1,8 @@
-const port = @import("root").system.ports;
+const port = @import("root.zig").x86_ports;
+
 pub const regoff = u8;
 
 pub const Addr = packed struct {
-
     bus: u8,
     device: u5,
     function: u3,
@@ -55,7 +55,6 @@ pub const Addr = packed struct {
         size: u64,
     };
 
-
     fn cfgreg(comptime T: type, comptime off: regoff) fn (self: @This()) PciFn(T, off) {
         return struct {
             fn function(self: Addr) PciFn(T, off) {
@@ -80,5 +79,4 @@ pub const Addr = packed struct {
         const val = 1 << 31 | @as(u32, offset) | @as(u32, addr.function) << 8 | @as(u32, addr.device) << 11 | @as(u32, addr.bus) << 16;
         port.outl(0xCF8, val);
     }
-    
 };
