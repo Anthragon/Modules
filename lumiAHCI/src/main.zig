@@ -96,7 +96,7 @@ pub fn device_probe(dev: *PciDevice) callconv(.c) bool {
     iterate_ports(abar);
 
     // Settup the interruption vector
-     const int_vector = dev.addr.int_line().read();
+    const int_vector = dev.addr.int_line().read();
     root.interrupts.unmask_irq(int_vector);
 
     abar.ghc |= 0b10;

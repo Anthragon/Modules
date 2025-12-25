@@ -9,11 +9,12 @@ const DiskEntry = core.common.DiskEntry;
 const PartEntry = core.common.PartEntry;
 
 // Module information
-pub const module_name: [*:0]const u8 =     "lumiDisk";
-pub const module_version: [*:0]const u8 =  "0.1.0";
-pub const module_author: [*:0]const u8 =   "lumi2021";
+pub const module_name: [*:0]const u8 = "lumiDisk";
+pub const module_version: [*:0]const u8 = "0.1.0";
+pub const module_author: [*:0]const u8 = "lumi2021";
 pub const module_liscence: [*:0]const u8 = "MPL-2.0";
 pub const module_uuid: u128 = @bitCast(core.utils.Guid.fromString("eb896ec0-46ef-4996-a8ef-c82c4ac9f05f") catch unreachable);
+
 
 pub fn init() callconv(.c) bool {
     log.info("Hello, lumiDisk!", .{});
@@ -21,15 +22,18 @@ pub fn init() callconv(.c) bool {
     arena = .init(@import("root").mem.heap.kernel_buddy_allocator);
     allocator = arena.allocator();
 
-    const devices_node = capabilities.get_node_by_guid(core.utils.Guid.fromString("753d870c-e51b-40d2-96b9-beb3bfa8cd02") catch unreachable) orelse return false;
-    mass_storage_resource = capabilities.create_resource(core.utils.Guid.fromString("35d36bb8-62f0-43d6-a617-d0bac8069a16") catch unreachable, devices_node, "MassStorage") catch unreachable;
+    const devices_node = capabilities.get_node("Devices") orelse return false;
+    mass_storage_resource = capabilities.create_resource(devices_node, "MassStorage") catch unreachable;
+
+    register_device = @ptrCast(devices_node.branch("register_device").?.data.callable);
+    remove_device = @ptrCast(devices_node.branch("remove_device").?.data.callable);
 
     _ = capabilities.create_callable(mass_storage_resource, "lsblk", @ptrCast(&lsblk)) catch unreachable;
     _ = capabilities.create_callable(mass_storage_resource, "append_device", @ptrCast(&append_device)) catch unreachable;
-    
+
     _ = capabilities.create_callable(mass_storage_resource, "get_disk_by_identifier", @ptrCast(&get_disk_by_identifier)) catch unreachable;
     _ = capabilities.create_callable(mass_storage_resource, "get_disk_by_identifier_part_by_identifier", @ptrCast(&get_disk_by_identifier_part_by_identifier)) catch unreachable;
-    
+
     _ = capabilities.create_callable(mass_storage_resource, "DiskEntry__read", @ptrCast(&DiskEntry.c_read)) catch unreachable;
     _ = capabilities.create_callable(mass_storage_resource, "PartEntry__read", @ptrCast(&PartEntry.c_read)) catch unreachable;
 
@@ -40,6 +44,8 @@ pub fn deinit() callconv(.c) void {
 }
 
 var mass_storage_resource: *capabilities.Node = undefined;
+var register_device: *const fn (devname: [*:0]const u8, identifier: u128, subclass: usize, canSee: usize, canRead: usize, canControl: usize) callconv(.c) void = undefined;
+var remove_device: *const fn (dev: usize) callconv(.c) void = undefined;
 
 var arena: std.heap.ArenaAllocator = undefined;
 var allocator: std.mem.Allocator = undefined;
@@ -52,7 +58,6 @@ fn append_device(
     seclen: usize,
     vtable: *const DiskEntry.VTable,
 ) callconv(.c) void {
-
     var entry = allocator.create(DiskEntry) catch @import("root").oom_panic();
     entry.* = .{
         .context = ctx,
@@ -73,8 +78,7 @@ fn get_disk_by_identifier(ident: [*:0]const u8) callconv(.c) ?*DiskEntry {
     const identifier = std.mem.sliceTo(ident, 0);
 
     for (disk_list.items) |disk| {
-        if (disk.global_identifier != null
-            and std.mem.eql(u8, std.mem.sliceTo(disk.global_identifier.?, 0), identifier)) return disk;
+        if (disk.global_identifier != null and std.mem.eql(u8, std.mem.sliceTo(disk.global_identifier.?, 0), identifier)) return disk;
     }
     return null;
 }
@@ -85,19 +89,17 @@ fn get_disk_by_identifier_part_by_identifier(disk_ident: [*:0]const u8, part_ide
     const identifier = std.mem.sliceTo(part_ident, 0);
 
     for (parts, 0..) |part, i| {
-        if (part.global_identifier != null
-        and std.mem.eql(u8, std.mem.sliceTo(part.global_identifier.?, 0), identifier))
+        if (part.global_identifier != null and std.mem.eql(u8, std.mem.sliceTo(part.global_identifier.?, 0), identifier))
             return &disk.partitions[i];
     }
     return null;
 }
 
 fn scan_disk(disk_entry: *DiskEntry) void {
-
     var buf: [512]u8 = undefined;
     disk_entry.read(0, &buf) catch @panic("Failed to read disk");
-    
-    const partitions = std.mem.bytesAsSlice(MBRPartition, buf[0x1be .. 0x1fe]);
+
+    const partitions = std.mem.bytesAsSlice(MBRPartition, buf[0x1be..0x1fe]);
 
     var isgpt = false;
     for (partitions) |i| {
@@ -113,24 +115,21 @@ fn scan_disk(disk_entry: *DiskEntry) void {
     } else {
         @import("mbr.zig").analyze(&buf, disk_entry) catch @panic("Failed to read disk");
     }
-
 }
-
 
 fn lsblk() callconv(.c) void {
     log.warn("lsblk", .{});
 
     for (disk_list.items) |i| {
-        const ds = core.utils.units.calc(i.sectors_length*512, &core.utils.units.data);
+        const ds = core.utils.units.calc(i.sectors_length * 512, &core.utils.units.data);
         log.info("{s: <15} Disk    {d: >5.2} {s: <6} {s}", .{ i.type, ds.@"0", ds.@"1", i.global_identifier orelse "--" });
 
         for (0..i.partitions_length) |j| {
             const p = i.partitions[j];
-            const ps = core.utils.units.calc((p.end_sector - p.start_sector)*512, &core.utils.units.data);
+            const ps = core.utils.units.calc((p.end_sector - p.start_sector) * 512, &core.utils.units.data);
             log.info("   {s: <12} Part    {d: >5.2} {s: <6} {s}", .{ p.readable_name, ps.@"0", ps.@"1", p.global_identifier orelse "--" });
         }
     }
-
 }
 
 const MBRPartition = packed struct {
@@ -147,4 +146,3 @@ const MBRPartition = packed struct {
         _,
     };
 };
-

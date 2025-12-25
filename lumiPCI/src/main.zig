@@ -47,8 +47,8 @@ pub fn init() callconv(.c) bool {
     dev_list = .empty;
 
     // Creating the resource interfaces
-    const devices_node = capabilities.get_node_by_guid(Guid.fromString("753d870c-e51b-40d2-96b9-beb3bfa8cd02") catch unreachable);
-    pci_resource = capabilities.create_resource(Guid.fromString("4a56f4da-feee-4715-aed3-25f754025840") catch unreachable, devices_node, "PCI") catch @panic("Not Implemented");
+    const devices_node = capabilities.get_node("Devices").?;
+    pci_resource = capabilities.create_resource(devices_node, "PCI") catch @panic("Not Implemented");
 
     _ = capabilities.create_callable(pci_resource, "lspci", @ptrCast(&lspci)) catch unreachable;
     _ = capabilities.create_event(pci_resource, "device_probe", on_pci_device_probe_bind, on_pci_device_probe_unbind) catch unreachable;
