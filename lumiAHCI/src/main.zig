@@ -1,5 +1,6 @@
 const std = @import("std");
 const root = @import("root");
+const klib = @import("klib");
 const pci = @import("pci_lib");
 const disk = @import("disk_lib");
 const modules = root.modules;
@@ -16,11 +17,19 @@ var allocator: std.mem.Allocator = undefined;
 const sata = @import("sata.zig");
 
 // Module information
-pub const module_name: [*:0]const u8 = "lumiAHCI";
-pub const module_version: [*:0]const u8 = "0.1.0";
-pub const module_author: [*:0]const u8 = "lumi2021";
-pub const module_liscence: [*:0]const u8 = "MPL-2.0";
-pub const module_uuid: u128 = @bitCast(root.utils.Guid.fromString("37df8d37-d77c-4f86-bb99-514b542b23da") catch unreachable);
+comptime {
+    @export(&module_info, .{
+        .name = "module_info",
+        .section = ".kernel_modules",
+    });
+}
+const module_info = klib.Module{
+    .name = "lumiAHCI",
+    .version = "0.1.0",
+    .author = "lumi2021",
+    .license = "MPL-2.0",
+    .uuid = @bitCast(root.utils.Guid.fromString("37df8d37-d77c-4f86-bb99-514b542b23da") catch unreachable),
+};
 
 pub var pci_dynamic: struct { lspci: *const fn () callconv(.c) void, device_probe: *capabilities.Event } = undefined;
 pub var disk_dynamic: struct {
