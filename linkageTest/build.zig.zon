@@ -1,9 +1,0 @@
-.{
-    .name = .linkageTest,
-    .version = "0.0.0",
-    .fingerprint = 0x3570f2d25f243f2d,
-
-    .dependencies = .{},
-
-    .paths = .{ "build.zig", "build.zig.zon" },
-}

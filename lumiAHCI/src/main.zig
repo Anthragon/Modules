@@ -1,34 +1,31 @@
 const std = @import("std");
-const root = @import("root");
 const klib = @import("klib");
 const pci = @import("pci_lib");
 const disk = @import("disk_lib");
-const modules = root.modules;
-const capabilities = root.capabilities;
+
+const capabilities = klib.capabilities;
+var capabilities_calls: struct {
+    get_node: *const fn (path: [*:0]const u8) callconv(.c) ?*capabilities.Node,
+} = undefined;
 
 const log = std.log.scoped(.lumiAHCI);
 
 const PciDevice = pci.PciDevice;
 const PciDeviceQuery = pci.PciDeviceQuery;
 
-var arena: std.heap.ArenaAllocator = undefined;
+var kernelAllocator: klib.mem.ModuleAllocator = undefined;
 var allocator: std.mem.Allocator = undefined;
+var page_size: usize = undefined;
 
 const sata = @import("sata.zig");
 
-// Module information
-comptime {
-    @export(&module_info, .{
-        .name = "module_info",
-        .section = ".kernel_modules",
-    });
-}
-const module_info = klib.Module{
+export const module_info linksection(".kernel_modules") = klib.Module{
     .name = "lumiAHCI",
     .version = "0.1.0",
     .author = "lumi2021",
     .license = "MPL-2.0",
-    .uuid = @bitCast(root.utils.Guid.fromString("37df8d37-d77c-4f86-bb99-514b542b23da") catch unreachable),
+    .flags = .{ .needs_privilege = false },
+    .uuid = @bitCast(klib.utils.Guid.fromString("37df8d37-d77c-4f86-bb99-514b542b23da") catch unreachable),
 };
 
 pub var pci_dynamic: struct { lspci: *const fn () callconv(.c) void, device_probe: *capabilities.Event } = undefined;
@@ -41,14 +38,18 @@ var pci_mass_storage_query = [_]PciDeviceQuery{
     .endOfChain(),
 };
 
-pub fn init() callconv(.c) bool {
+fn init() callconv(.c) bool {
     log.info("Hello, lumiAHCI!", .{});
 
-    arena = .init(root.mem.heap.kernel_buddy_allocator);
-    allocator = arena.allocator();
+    var kernelTable: klib.KernelTablev1 = undefined;
+    klib.get_kernel_table(&kernelTable);
 
-    pci_dynamic.lspci = @ptrCast((capabilities.get_node("Devices.PCI.lspci") orelse return false).data.callable);
-    pci_dynamic.device_probe = &(capabilities.get_node("Devices.PCI.device_probe") orelse return false).data.event;
+    kernelAllocator = klib.mem.ModuleAllocator.fromKernelVtable(&kernelTable);
+    allocator = kernelAllocator.allocator();
+    page_size = kernelTable.mem_pageSize;
+
+    pci_dynamic.lspci = @ptrCast((capabilities_calls.get_node("Devices.PCI.lspci") orelse return false).data.callable);
+    pci_dynamic.device_probe = &(capabilities_calls.get_node("Devices.PCI.device_probe") orelse return false).data.event;
 
     disk_dynamic.append_device = @ptrCast((capabilities.get_node("Devices.MassStorage.append_device") orelse return false).data.callable);
 
@@ -60,9 +61,9 @@ pub fn init() callconv(.c) bool {
 
     return true;
 }
-pub fn deinit() callconv(.c) void {}
+fn deinit() callconv(.c) void {}
 
-pub fn device_probe(dev: *PciDevice) callconv(.c) bool {
+fn device_probe(dev: *PciDevice) callconv(.c) bool {
 
     // Swith-case by the vendor and device to
     // assign the correct names to it
@@ -80,7 +81,7 @@ pub fn device_probe(dev: *PciDevice) callconv(.c) bool {
     // Allocate the memory for the device bar
     const bar_info = dev.addr.barinfo(5);
     log.debug("Bar info: ptr: {X}, size: {} bytes", .{ bar_info.phy, bar_info.size });
-    const bar_size_aligned = std.mem.alignForward(usize, bar_info.size, root.mem.page_size);
+    const bar_size_aligned = std.mem.alignForward(usize, bar_info.size, page_size);
     const allocation = root.mem.heap.kernel_page_allocator.reserve(bar_size_aligned, .@"1");
 
     // Remapping pages
@@ -114,7 +115,7 @@ pub fn device_probe(dev: *PciDevice) callconv(.c) bool {
     return true;
 }
 
-pub fn find_cmdslot(port: *HBAPort, cmdslots: usize) isize {
+fn find_cmdslot(port: *HBAPort, cmdslots: usize) isize {
     var slots = (port.sact | port.ci);
     for (0..cmdslots) |i| {
         if ((slots & 1) == 0) return @bitCast(i);

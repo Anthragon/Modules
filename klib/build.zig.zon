@@ -2,7 +2,9 @@
     .name = .klib,
     .version = "0.0.0",
 
-    .dependencies = .{},
+    .dependencies = .{
+        .kernel = .{ .path = "../../kernel" },
+    },
 
     .paths = .{
         "build.zig",
