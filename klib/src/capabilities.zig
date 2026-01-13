@@ -1,8 +1,24 @@
 const std = @import("std");
-const root = @import("root");
+const root = @import("root.zig");
 const Guid = root.utils.Guid;
 const interop = root.interop;
 const Result = interop.Result;
+
+pub fn get_node(path: [:0]const u8) !*Node {
+    return root.vtable.v1.capabilities_getNode(path.ptr) orelse error.NotFound;
+}
+pub fn create_resource(parent: *Node, name: [:0]const u8) !*Node {
+    return root.vtable.v1.capabilities_createResource(parent, name.ptr) orelse error.NotCreated;
+}
+pub fn create_callable(parent: *Node, name: [:0]const u8, callable: *const anyopaque) !*Node {
+    return root.vtable.v1.capabilities_createCallable(parent, name.ptr, callable).asbuiltin();
+}
+pub fn create_property(parent: *Node, name: [:0]const u8, getter: *const anyopaque, setter: *const anyopaque) !*Node {
+    return root.vtable.v1.capabilities_createProperty(parent, name.ptr, getter, setter).asbuiltin();
+}
+pub fn create_event(parent: ?*Node, name: [:0]const u8, bind: *const anyopaque, unbind: *const anyopaque) !*Node {
+    return root.vtable.v1.capabilities_createEvent(parent, name.ptr, bind, unbind).asbuiltin();
+}
 
 const NodeDataTags = enum {
     resource,

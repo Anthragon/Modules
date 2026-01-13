@@ -2,7 +2,9 @@
     .name = .lumiPCI,
     .version = "0.0.0",
 
-    .dependencies = .{},
+    .dependencies = .{
+        .klib = .{ .path = "../klib" },
+    },
 
     .paths = .{ "build.zig", "build.zig.zon" },
 }

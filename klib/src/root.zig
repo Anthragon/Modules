@@ -8,56 +8,70 @@ pub const Module = extern struct {
     version: [*:0]const u8,
     author: [*:0]const u8,
     license: [*:0]const u8,
+    uuid: u128,
+
+    vtable: *KernelVTable,
     flags: packed struct {
         needs_privilege: bool,
         _rsvd: u63 = 0,
     },
-    uuid: u128,
+
+    init: *const anyopaque,
+    deinit: *const anyopaque,
 };
 
-pub const KernelTablev1 = extern struct {
-    kernel_name: [*:0]const u8,
-    kernel_version: [*:0]const u8,
+pub const KernelVTable = extern struct {
+    abi_version: usize,
+    kernel_name: [*:0]const u8 = undefined,
+    kernel_version: [*:0]const u8 = undefined,
+    v1: extern struct {
+        panic: *const fn (message: [*:0]const u8) callconv(.c) noreturn,
 
-    log_debug: *const fn ([*:0]const u8) callconv(.c) void,
-    log_err: *const fn ([*:0]const u8) callconv(.c) void,
-    log_info: *const fn ([*:0]const u8) callconv(.c) void,
-    log_warn: *const fn ([*:0]const u8) callconv(.c) void,
+        log_debug: *const fn (scope: [*:0]const u8, message: [*:0]const u8) callconv(.c) void,
+        log_err: *const fn (scope: [*:0]const u8, message: [*:0]const u8) callconv(.c) void,
+        log_info: *const fn (scope: [*:0]const u8, message: [*:0]const u8) callconv(.c) void,
+        log_warn: *const fn (scope: [*:0]const u8, message: [*:0]const u8) callconv(.c) void,
 
-    mem_pageSize: usize,
-    mem_alloc: *const fn (length: usize, alignment: std.mem.Alignment) callconv(.c) ?[*]u8,
-    mem_resize: *const fn (memory: *anyopaque, old_lemgth: usize, new_length: usize, alignment: std.mem.Alignment) callconv(.c) bool,
-    mem_remap: *const fn (memory: *anyopaque, old_length: usize, new_length: usize, alignment: std.mem.Alignment) callconv(.c) ?[*]u8,
-    mem_free: *const fn (memory: *anyopaque, alignment: std.mem.Alignment) callconv(.c) void,
+        mem_pageSize: usize,
+        mem_alloc: *const fn (length: usize, alignment: usize) callconv(.c) ?[*]u8,
+        mem_resize: *const fn (memory: *anyopaque, old_lemgth: usize, new_length: usize, alignment: usize) callconv(.c) bool,
+        mem_remap: *const fn (memory: *anyopaque, old_length: usize, new_length: usize, alignment: usize) callconv(.c) ?[*]u8,
+        mem_free: *const fn (memory: *anyopaque, length: usize, alignment: usize) callconv(.c) void,
 
-    capabilities_getNode: *const fn (path: [*:0]const u8) callconv(.c) ?*capabilities.Node,
-    capabilities_createResource: *const fn (parent: ?*capabilities.Node, name: [*:0]const u8) callconv(.c) ?*capabilities.Node,
-    capabilities_createCallable: *const fn (parent: ?*capabilities.Node, name: [*:0]const u8, callable: *const anyopaque) callconv(.c) Result(*capabilities.Node),
-    capabilities_createProperty: *const fn (parent: ?*capabilities.Node, name: [*:0]const u8, getter: *const anyopaque, setter: *const anyopaque) callconv(.c) Result(*capabilities.Node),
-    capabilities_createEvent: *const fn (parent: ?*capabilities.Node, name: [*:0]const u8, bind: *const anyopaque, unbind: *const anyopaque) callconv(.c) Result(*capabilities.Node),
-};
-const KernelTableCallv1 = extern struct {
-    version: usize = 1,
-    table_ptr: *KernelTablev1,
+        capabilities_getNode: *const fn (path: [*:0]const u8) callconv(.c) ?*capabilities.Node,
+        capabilities_createResource: *const fn (parent: ?*capabilities.Node, name: [*:0]const u8) callconv(.c) ?*capabilities.Node,
+        capabilities_createCallable: *const fn (parent: ?*capabilities.Node, name: [*:0]const u8, callable: *const anyopaque) callconv(.c) Result(*capabilities.Node),
+        capabilities_createProperty: *const fn (parent: ?*capabilities.Node, name: [*:0]const u8, getter: *const anyopaque, setter: *const anyopaque) callconv(.c) Result(*capabilities.Node),
+        capabilities_createEvent: *const fn (parent: ?*capabilities.Node, name: [*:0]const u8, bind: *const anyopaque, unbind: *const anyopaque) callconv(.c) Result(*capabilities.Node),
+    } = undefined,
 };
 
 pub const mem = @import("mem.zig");
 pub const capabilities = @import("capabilities.zig");
 pub const utils = @import("utils/utils.zig");
 
-pub fn get_kernel_table(tablePtr: *KernelTablev1) void {
-    const request = KernelTableCallv1{
-        .table_ptr = tablePtr,
-    };
+pub const std_oprions = std.Options{ .logFn = log };
+pub var vtable: *KernelVTable = undefined;
 
-    asm volatile (
-        \\ syscall
-        :
-        : [rax] "{rax}" (0x000A_0000),
-          [rbx] "{rbx}" (&request),
-        : .{
-          .rcx = true,
-          .r11 = true,
-          .memory = true,
-        });
+pub fn kernel_panic(message: [*:0]const u8) noreturn {
+    vtable.v1.panic(message);
+    unreachable;
+}
+
+fn log(
+    comptime message_level: std.log.Level,
+    comptime scope: @TypeOf(.enum_literal),
+    comptime format: []const u8,
+    args: anytype,
+) void {
+    var buf: [512]u8 = undefined;
+    const str = std.fmt.bufPrintZ(&buf, format, args) catch unreachable;
+    const scopestr: [*:0]const u8 = @tagName(scope);
+
+    switch (message_level) {
+        .info => vtable.v1.log_info(scopestr, str.ptr),
+        .debug => vtable.v1.log_debug(scopestr, str.ptr),
+        .err => vtable.v1.log_err(scopestr, str.ptr),
+        .warn => vtable.v1.log_warn(scopestr, str.ptr),
+    }
 }

@@ -1,9 +1,11 @@
 const std = @import("std");
-const root = @import("root");
 const lib = @import("lib");
-const modules = root.modules;
-const capabilities = root.capabilities;
-const Guid = root.utils.Guid;
+const klib = @import("klib");
+const capabilities = klib.capabilities;
+const Result = klib.Result;
+
+pub const std_options = klib.std_oprions;
+pub var vtable: klib.KernelVTable = .{ .abi_version = 1 };
 
 pub const internal = switch (@import("builtin").cpu.arch) {
     //.x86 => ,
@@ -25,29 +27,32 @@ pub const DeviceList = std.ArrayList(*PciDevice);
 const DeviceProbeCallback = lib.callables.DeviceProbeCallback;
 
 // Module information
-pub const module_name: [*:0]const u8 = "lumiPCI";
-pub const module_version: [*:0]const u8 = "0.1.0";
-pub const module_author: [*:0]const u8 = "lumi2021";
-pub const module_liscence: [*:0]const u8 = "MPL-2.0";
-pub const module_uuid: u128 = @bitCast(root.utils.Guid.fromString("0ab98143-4f24-4e66-8c82-bed8cac47a21") catch unreachable);
+export const module_info linksection(".kernel_modules") = klib.Module{
+    .name = "lumiPCI",
+    .version = "0.1.0",
+    .author = "lumi2021",
+    .license = "MPL-2.0",
+    .vtable = &vtable,
+    .flags = .{ .needs_privilege = true },
+    .uuid = @bitCast(klib.utils.Guid.fromString("0ab98143-4f24-4e66-8c82-bed8cac47a21") catch unreachable),
+    .init = @ptrCast(&init),
+    .deinit = @ptrCast(&deinit),
+};
 
 const log = std.log.scoped(.lumiPCI);
-
-var arena: std.heap.ArenaAllocator = undefined;
 var allocator: std.mem.Allocator = undefined;
 
 pub fn init() callconv(.c) bool {
-    log.info("Hello, lumiPCI!", .{});
+    klib.vtable = &vtable;
+    allocator = klib.mem.allocator();
 
-    // Creating an specific arena allocator for this module
-    arena = .init(root.mem.heap.kernel_buddy_allocator);
-    allocator = arena.allocator();
+    log.info("Hello, lumiPCI!", .{});
 
     // Initializing device list with scoped allocator
     dev_list = .empty;
 
     // Creating the resource interfaces
-    const devices_node = capabilities.get_node("Devices").?;
+    const devices_node = capabilities.get_node("Devices") catch @panic("Not Implemented");
     pci_resource = capabilities.create_resource(devices_node, "PCI") catch @panic("Not Implemented");
 
     _ = capabilities.create_callable(pci_resource, "lspci", @ptrCast(&lspci)) catch unreachable;
@@ -59,11 +64,15 @@ pub fn init() callconv(.c) bool {
 
     return true;
 }
-pub fn deinit() callconv(.c) void {
-    arena.deinit();
+pub fn deinit() callconv(.c) void {}
+
+pub fn panic(msg: []const u8, _: ?*std.builtin.StackTrace, _: ?usize) noreturn {
+    var buf: [128]u8 = undefined;
+    const str = std.fmt.bufPrintZ(&buf, "{s}", .{msg}) catch unreachable;
+    klib.kernel_panic(str);
 }
 
-var pci_resource: *capabilities.Node = undefined;
+var pci_resource: *klib.capabilities.Node = undefined;
 var pci_probe_callbacks: std.ArrayListUnmanaged(PciDeviceProbeEntry) = .empty;
 
 var dev_list: DeviceList = undefined;
@@ -77,7 +86,7 @@ fn on_pci_device_probe_bind(callback: *const anyopaque, ctx: ?*anyopaque) callco
     pci_probe_callbacks.append(allocator, .{
         .callback = @ptrCast(@alignCast(callback)),
         .context = ctx orelse return false,
-    }) catch root.oom_panic();
+    }) catch @panic("OOM");
     probe_single(
         @ptrCast(@alignCast(callback)),
         @ptrCast(@alignCast(ctx)),

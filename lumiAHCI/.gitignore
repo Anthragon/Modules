@@ -1,6 +1,0 @@
-# editor-specific
-.vscode/
-
-# zig build local files
-.zig-cache/
-zig-out/
