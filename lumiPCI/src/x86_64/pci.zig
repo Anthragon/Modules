@@ -5,7 +5,7 @@ const ports = root.system.ports;
 const debug = root.debug;
 const main = @import("../main.zig");
 
-const log = std.log.scoped(.@"lumiPCI x86_64");
+const log = std.log.scoped(.x86_64);
 
 pub const Addr = lib.Addr;
 

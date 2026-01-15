@@ -1,6 +1,7 @@
 .{
     .name = .lumiPCI,
     .version = "0.0.0",
+    .fingerprint = 0x15f1a5aa3623b818,
 
     .dependencies = .{
         .klib = .{ .path = "../klib" },

@@ -32,34 +32,30 @@ export const module_info linksection(".kernel_modules") = klib.Module{
     .version = "0.1.0",
     .author = "lumi2021",
     .license = "MPL-2.0",
-    .vtable = &vtable,
     .flags = .{ .needs_privilege = true },
-    .uuid = @bitCast(klib.utils.Guid.fromString("0ab98143-4f24-4e66-8c82-bed8cac47a21") catch unreachable),
+    .uuid = klib.Guid.fromString("0ab98143-4f24-4e66-8c82-bed8cac47a21") catch unreachable,
     .init = @ptrCast(&init),
     .deinit = @ptrCast(&deinit),
 };
 
-const log = std.log.scoped(.lumiPCI);
+const log = std.log.scoped(.main);
 var allocator: std.mem.Allocator = undefined;
 
 pub fn init() callconv(.c) bool {
-    klib.vtable = &vtable;
-    allocator = klib.mem.allocator();
-
+    klib.module_uuid = module_info.uuid;
     log.info("Hello, lumiPCI!", .{});
 
-    // Initializing device list with scoped allocator
+    allocator = klib.mem.allocator();
     dev_list = .empty;
 
-    // Creating the resource interfaces
-    const devices_node = capabilities.get_node("Devices") catch @panic("Not Implemented");
-    pci_resource = capabilities.create_resource(devices_node, "PCI") catch @panic("Not Implemented");
-
-    _ = capabilities.create_callable(pci_resource, "lspci", @ptrCast(&lspci)) catch unreachable;
-    _ = capabilities.create_event(pci_resource, "device_probe", on_pci_device_probe_bind, on_pci_device_probe_unbind) catch unreachable;
+    log.debug("Registring capabilities...", .{});
+    klib.buildin_register_capability(.Callable, "Devices.PCI", "lspci", &lspci);
+    klib.buildin_register_capability(.EventBind, "Devices.PCI", "device_probe", &lspci);
+    klib.buildin_register_capability(.EventUnbind, "Devices.PCI", "device_probe", &lspci);
 
     // Iterate though all PCI device slots, checks if there is a device
     // and append at the global dev_list list
+    log.debug("Iterating devices...", .{});
     list_pci_devices() catch return false;
 
     return true;
@@ -72,7 +68,6 @@ pub fn panic(msg: []const u8, _: ?*std.builtin.StackTrace, _: ?usize) noreturn {
     klib.kernel_panic(str);
 }
 
-var pci_resource: *klib.capabilities.Node = undefined;
 var pci_probe_callbacks: std.ArrayListUnmanaged(PciDeviceProbeEntry) = .empty;
 
 var dev_list: DeviceList = undefined;
@@ -82,7 +77,8 @@ pub fn list_pci_devices() !void {
     try internal.list_devices(allocator, &dev_list);
 }
 
-fn on_pci_device_probe_bind(callback: *const anyopaque, ctx: ?*anyopaque) callconv(.c) bool {
+const on_pci_device_probe_bind = @"cap privileged_event_bind [0ab98143-4f24-4e66-8c82-bed8cac47a21]Devices.PCI:device_probe";
+fn @"cap privileged_event_bind [0ab98143-4f24-4e66-8c82-bed8cac47a21]Devices.PCI:device_probe"(callback: *const anyopaque, ctx: ?*anyopaque) callconv(.c) bool {
     pci_probe_callbacks.append(allocator, .{
         .callback = @ptrCast(@alignCast(callback)),
         .context = ctx orelse return false,
@@ -93,7 +89,8 @@ fn on_pci_device_probe_bind(callback: *const anyopaque, ctx: ?*anyopaque) callco
     );
     return true;
 }
-fn on_pci_device_probe_unbind(callback: *const anyopaque) callconv(.c) void {
+const on_pci_device_probe_unbind = @"cap privileged_event_unbind [0ab98143-4f24-4e66-8c82-bed8cac47a21]Devices.PCI:device_probe";
+fn @"cap privileged_event_unbind [0ab98143-4f24-4e66-8c82-bed8cac47a21]Devices.PCI:device_probe"(callback: *const anyopaque) callconv(.c) void {
     for (pci_probe_callbacks.items, 0..) |i, idx| {
         if (@intFromPtr(i.callback) == @intFromPtr(callback)) {
             _ = pci_probe_callbacks.swapRemove(idx);
@@ -137,7 +134,8 @@ fn probe_single(func: DeviceProbeCallback, query: [*]const PciDeviceQuery) void 
     }
 }
 
-fn lspci() callconv(.c) void {
+const lspci = @"cap privileged_callable [0ab98143-4f24-4e66-8c82-bed8cac47a21]Devices.PCI::lspci";
+export fn @"cap privileged_callable [0ab98143-4f24-4e66-8c82-bed8cac47a21]Devices.PCI::lspci"() callconv(.c) void {
     log.warn("lspci", .{});
 
     for (dev_list.items) |i| {
