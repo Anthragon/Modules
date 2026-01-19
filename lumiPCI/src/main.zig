@@ -49,9 +49,8 @@ pub fn init() callconv(.c) bool {
     dev_list = .empty;
 
     log.debug("Registring capabilities...", .{});
-    klib.buildin_register_capability(.Callable, "Devices.PCI", "lspci", &lspci);
-    klib.buildin_register_capability(.EventBind, "Devices.PCI", "device_probe", &lspci);
-    klib.buildin_register_capability(.EventUnbind, "Devices.PCI", "device_probe", &lspci);
+    klib.register_cap_call("Devices.PCI", "lspci", &lspci);
+    //klib.register_cap_call("Devices.PCI", "device_probe", &lspci);
 
     // Iterate though all PCI device slots, checks if there is a device
     // and append at the global dev_list list

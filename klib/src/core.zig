@@ -27,29 +27,26 @@ pub const log_err: LogSig = switch (module_config.builtin) {
     false => @extern(LogSig, .{ .name = "cap callable [00000000-0000-0000-0000-000000000000]System.ModuleHelper::log_err" }),
 };
 
-extern fn @"Anthragon:buildin_register_capability"(
-    module_uuid: Guid,
-    kind: kernel.CapabilityKind,
-    namespace: [*:0]const u8,
-    symbol: [*:0]const u8,
-    pointer: *const anyopaque,
-) callconv(.c) void;
-pub fn buildin_register_capability(
-    kind: kernel.CapabilityKind,
-    namespace: [*:0]const u8,
-    symbol: [*:0]const u8,
-    pointer: *const anyopaque,
-) void {
+extern fn @"Anthragon:buildin_register_capability_callable"(module_uuid: Guid, namespace: [*:0]const u8, symbol: [*:0]const u8, pointer: *const anyopaque) callconv(.c) void;
+pub fn buildin_register_capability_callable(namespace: [*:0]const u8, symbol: [*:0]const u8, pointer: *const anyopaque) void {
     switch (module_config.builtin) {
-        true => {
-            @"Anthragon:buildin_register_capability"(
-                root.module_uuid,
-                kind,
-                namespace,
-                symbol,
-                @ptrCast(pointer),
-            );
-        },
+        true => @"Anthragon:buildin_register_capability_callable"(root.module_uuid, namespace, symbol, @ptrCast(pointer)),
+        false => {},
+    }
+}
+
+extern fn @"Anthragon:buildin_register_capability_property"(module_uuid: Guid, namespace: [*:0]const u8, symbol: [*:0]const u8, getter: *const anyopaque, setter: *const anyopaque) callconv(.c) void;
+pub fn buildin_register_capability_property(namespace: [*:0]const u8, symbol: [*:0]const u8, getter: *const anyopaque, setter: *const anyopaque) void {
+    switch (module_config.builtin) {
+        true => @"Anthragon:buildin_register_capability_property"(root.module_uuid, namespace, symbol, @ptrCast(getter), @ptrCast(setter)),
+        false => {},
+    }
+}
+
+extern fn @"Anthragon:buildin_register_capability_event"(module_uuid: Guid, namespace: [*:0]const u8, symbol: [*:0]const u8, bind: *const anyopaque, unbind: *const anyopaque) callconv(.c) void;
+pub fn buildin_register_capability_event(namespace: [*:0]const u8, symbol: [*:0]const u8, bind: *const anyopaque, unbind: *const anyopaque) void {
+    switch (module_config.builtin) {
+        true => @"Anthragon:buildin_register_capability_event"(root.module_uuid, namespace, symbol, @ptrCast(bind), @ptrCast(unbind)),
         false => {},
     }
 }

@@ -14,7 +14,7 @@ pub const units = kernel.utils.units;
 
 pub const mem = @import("mem.zig");
 
-pub const buildin_register_capability = core.buildin_register_capability;
+pub const register_cap_call = core.buildin_register_capability_callable;
 
 pub fn kernel_panic(message: [*:0]const u8) noreturn {
     core.panic(module_uuid, message);
