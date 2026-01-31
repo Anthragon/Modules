@@ -1,4 +1,9 @@
-const port = @import("root.zig").x86_ports;
+const builtin = @import("builtin");
+
+const ports = switch (builtin.cpu.arch) {
+    .x86, .x86_64 => @import("x86_ports.zig"),
+    else => @panic("TODO Not implemented"),
+};
 
 pub const regoff = u8;
 
@@ -42,12 +47,12 @@ pub const Addr = packed struct {
 
     pub fn read(self: @This(), comptime T: type, offset: regoff) T {
         pci_space_request(self, offset);
-        return port.in(T, 0xCFC + @as(u16, offset % 4));
+        return ports.in(T, 0xCFC + @as(u16, offset % 4));
     }
 
     pub fn write(self: @This(), comptime T: type, offset: regoff, value: T) void {
         pci_space_request(self, offset);
-        return port.out(T, 0xCFC + @as(u16, offset % 4), value);
+        return ports.out(T, 0xCFC + @as(u16, offset % 4), value);
     }
 
     pub const BarInfo = struct {
@@ -77,6 +82,6 @@ pub const Addr = packed struct {
 
     fn pci_space_request(addr: @This(), offset: regoff) void {
         const val = 1 << 31 | @as(u32, offset) | @as(u32, addr.function) << 8 | @as(u32, addr.device) << 11 | @as(u32, addr.bus) << 16;
-        port.outl(0xCF8, val);
+        ports.outl(0xCF8, val);
     }
 };

@@ -1,30 +1,17 @@
 const std = @import("std");
-const lib = @import("lib");
 const klib = @import("klib");
 const capabilities = klib.capabilities;
 const Result = klib.Result;
+const Guid = klib.Guid;
 
 pub const std_options = klib.std_oprions;
 pub var vtable: klib.KernelVTable = .{ .abi_version = 1 };
 
-pub const internal = switch (@import("builtin").cpu.arch) {
-    //.x86 => ,
-    .x86_64 => @import("x86_64/pci.zig"),
-    //.aarch64 => ,
-    else => unreachable,
-};
-
-const PciDeviceProbeEntry = struct {
-    context: *anyopaque,
-    callback: lib.callables.DeviceProbeCallback,
-};
-
-pub const PciDevice = lib.PciDevice;
-pub const PciDeviceQuery = lib.PciDeviceQuery;
-
-const Addr = internal.Addr;
+pub const Addr = @import("Addr.zig").Addr;
+pub const PciDevice = @import("PciDevice.zig");
 pub const DeviceList = std.ArrayList(*PciDevice);
-const DeviceProbeCallback = lib.callables.DeviceProbeCallback;
+
+const bus_scan = @import("bus_scan.zig");
 
 // Module information
 export const module_info linksection(".kernel_modules") = klib.Module{
@@ -39,7 +26,7 @@ export const module_info linksection(".kernel_modules") = klib.Module{
 };
 
 const log = std.log.scoped(.main);
-var allocator: std.mem.Allocator = undefined;
+pub var allocator: std.mem.Allocator = undefined;
 
 pub fn init() callconv(.c) bool {
     klib.module_uuid = module_info.uuid;
@@ -67,70 +54,36 @@ pub fn panic(msg: []const u8, _: ?*std.builtin.StackTrace, _: ?usize) noreturn {
     klib.kernel_panic(str);
 }
 
-var pci_probe_callbacks: std.ArrayListUnmanaged(PciDeviceProbeEntry) = .empty;
-
 var dev_list: DeviceList = undefined;
 
 pub fn list_pci_devices() !void {
     dev_list.clearAndFree(allocator);
-    try internal.list_devices(allocator, &dev_list);
+    try bus_scan.list_devices(&dev_list);
 }
 
 const on_pci_device_probe_bind = @"cap privileged_event_bind [0ab98143-4f24-4e66-8c82-bed8cac47a21]Devices.PCI:device_probe";
 fn @"cap privileged_event_bind [0ab98143-4f24-4e66-8c82-bed8cac47a21]Devices.PCI:device_probe"(callback: *const anyopaque, ctx: ?*anyopaque) callconv(.c) bool {
-    pci_probe_callbacks.append(allocator, .{
-        .callback = @ptrCast(@alignCast(callback)),
-        .context = ctx orelse return false,
-    }) catch @panic("OOM");
-    probe_single(
-        @ptrCast(@alignCast(callback)),
-        @ptrCast(@alignCast(ctx)),
-    );
+    _ = callback;
+    _ = ctx;
+    // pci_probe_callbacks.append(allocator, .{
+    //     .callback = @ptrCast(@alignCast(callback)),
+    //     .context = ctx orelse return false,
+    // }) catch @panic("OOM");
+    // probe_single(
+    //     @ptrCast(@alignCast(callback)),
+    //     @ptrCast(@alignCast(ctx)),
+    // );
     return true;
 }
 const on_pci_device_probe_unbind = @"cap privileged_event_unbind [0ab98143-4f24-4e66-8c82-bed8cac47a21]Devices.PCI:device_probe";
 fn @"cap privileged_event_unbind [0ab98143-4f24-4e66-8c82-bed8cac47a21]Devices.PCI:device_probe"(callback: *const anyopaque) callconv(.c) void {
-    for (pci_probe_callbacks.items, 0..) |i, idx| {
-        if (@intFromPtr(i.callback) == @intFromPtr(callback)) {
-            _ = pci_probe_callbacks.swapRemove(idx);
-            break;
-        }
-    }
-}
-
-fn probe_all() void {
-    for (pci_probe_callbacks.items) |probe_request| {
-        probe_single(
-            @ptrCast(@alignCast(probe_request.callback)),
-            @ptrCast(@alignCast(probe_request.context)),
-        );
-    }
-}
-fn probe_single(func: DeviceProbeCallback, query: [*]const PciDeviceQuery) void {
-
-    // It will iterate through all unbinded devices,
-    // test the query and call the function if it matches
-
-    var j: usize = 0;
-    while (!query[j].isNull()) : (j += 1) {
-        const q = query[j];
-
-        for (dev_list.items) |dev| {
-            if (!dev.binded) {
-                if (q.get_vendor() != null and dev.addr.vendor_id().read() != q.vendor) continue;
-                if (q.get_device() != null and dev.addr.device_id().read() != q.device) continue;
-                if (q.get_class() != null and dev.addr.base_class().read() != q.class) continue;
-                if (q.get_sub_class() != null and dev.addr.sub_class().read() != q.sub_class) continue;
-                if (q.get_prog_if() != null and dev.addr.prog_if().read() != q.prog_if) continue;
-
-                const res = func(dev);
-                if (res) {
-                    log.info("Device successfully binded by module!", .{});
-                    dev.binded = true;
-                }
-            }
-        }
-    }
+    // for (pci_probe_callbacks.items, 0..) |i, idx| {
+    //     if (@intFromPtr(i.callback) == @intFromPtr(callback)) {
+    //         _ = pci_probe_callbacks.swapRemove(idx);
+    //         break;
+    //     }
+    // }
+    _ = callback;
 }
 
 const lspci = @"cap privileged_callable [0ab98143-4f24-4e66-8c82-bed8cac47a21]Devices.PCI::lspci";
@@ -141,3 +94,30 @@ export fn @"cap privileged_callable [0ab98143-4f24-4e66-8c82-bed8cac47a21]Device
         log.info("{X:0>2}:{X:0>2}.{X:0>1} [{X:0>2}:{X:0>2}] {s}: [{X:0>4}] {s} - [{X:0>4}] {s}", .{ i.get_bus(), i.get_device(), i.get_function(), i.addr.base_class().read(), i.addr.sub_class().read(), i.type_str, i.addr.vendor_id().read(), i.vendor_str, i.addr.device_id().read(), i.name_str });
     }
 }
+
+pub const RegisterDeviceInfo = extern struct {
+    id: usize = 0,
+    name: [*:0]const u8,
+    identifier: Guid,
+    specifier: usize,
+    interface: Guid,
+    flags: packed struct(u8) {
+        canSee: u1,
+        canReed: u1,
+        canWrite: u1,
+
+        _rsvd: u5 = 0,
+    },
+    status: enum(usize) {
+        failed = 0,
+        unset,
+
+        unbinded,
+        working,
+    } = .unset,
+};
+const RegisterDevicesSig = *const fn (deviceInfoPtr: [*]RegisterDeviceInfo, deviceInfoCount: usize) callconv(.c) Result(void);
+pub const register_devices: RegisterDevicesSig = @extern(
+    ?RegisterDevicesSig,
+    .{ .name = "cap privileged_callable [00000000-0000-0000-0000-000000000000]Devices::register" },
+) orelse @panic("Linking error");

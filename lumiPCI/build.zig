@@ -35,12 +35,6 @@ pub fn build(b: *std.Build) void {
     }
     const target = b.resolveTargetQuery(core_target);
 
-    const lib = b.addModule("lumiPCI_lib", .{
-        .root_source_file = b.path("lib/root.zig"),
-        .target = target,
-        .optimize = optimize,
-    });
-
     const klib = b.dependency("klib", .{ .builtin = builtin }).module("klib");
 
     const core = b.addModule("lumiPCI", .{
@@ -51,6 +45,5 @@ pub fn build(b: *std.Build) void {
         .code_model = .kernel,
     });
 
-    core.addImport("lib", lib);
     core.addImport("klib", klib);
 }

@@ -1,6 +1,7 @@
 .{
     .name = .klib,
     .version = "0.0.0",
+    .fingerprint = 0x9b2d4dc01993e721,
 
     .dependencies = .{
         .kernel = .{ .path = "../../kernel" },
