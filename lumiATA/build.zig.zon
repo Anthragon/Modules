@@ -1,0 +1,14 @@
+.{
+    .name = .lumiATA,
+    .version = "0.0.0",
+    .fingerprint = 0x34d60490d886cbc,
+
+    .dependencies = .{
+        .klib = .{ .path = "../klib" },
+    },
+
+    .paths = .{
+        "build.zig",
+        "build.zig.zon",
+    },
+}

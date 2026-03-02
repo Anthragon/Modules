@@ -14,7 +14,7 @@ pub const DeviceList = std.ArrayList(*PciDevice);
 const bus_scan = @import("bus_scan.zig");
 
 // Module information
-export const module_info linksection(".kernel_modules") = klib.Module{
+export const @"0ab98143-4f24-4e66-8c82-bed8cac47a21_module-info" linksection(".kernel_modules") = klib.Module{
     .name = "lumiPCI",
     .version = "0.1.0",
     .author = "lumi2021",
@@ -24,6 +24,7 @@ export const module_info linksection(".kernel_modules") = klib.Module{
     .init = @ptrCast(&init),
     .deinit = @ptrCast(&deinit),
 };
+const module_info = @"0ab98143-4f24-4e66-8c82-bed8cac47a21_module-info";
 
 const log = std.log.scoped(.main);
 pub var allocator: std.mem.Allocator = undefined;

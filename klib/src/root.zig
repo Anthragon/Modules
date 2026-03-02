@@ -27,8 +27,7 @@ fn log(
     comptime format: []const u8,
     args: anytype,
 ) void {
-    var buf: [512]u8 = undefined;
-    const str = std.fmt.bufPrintZ(&buf, format, args) catch unreachable;
+    const str = std.fmt.allocPrintSentinel(mem.allocator(), format, args, 0) catch unreachable;
     const scopestr: [*:0]const u8 = @tagName(scope);
 
     switch (message_level) {
@@ -37,4 +36,6 @@ fn log(
         .err => core.log_err(module_uuid, scopestr, str.ptr),
         .warn => core.log_warn(module_uuid, scopestr, str.ptr),
     }
+
+    mem.allocator().free(str);
 }
