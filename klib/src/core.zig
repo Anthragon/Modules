@@ -9,7 +9,7 @@ pub const panic: PanicSig = switch (module_config.builtin) {
     false => @extern(PanicSig, .{ .name = "cap callable [00000000-0000-0000-0000-000000000000]System.ModuleHelper::panic" }),
 };
 
-const LogSig = *const fn (module_uuid: Guid, scope: [*:0]const u8, message: [*:0]const u8) callconv(.c) void;
+const LogSig = *const fn (module_uuid: Guid, scope: [*:0]const u8, message_ptr: [*]const u8, message_len: usize) callconv(.c) void;
 pub const log_info: LogSig = switch (module_config.builtin) {
     true => @extern(LogSig, .{ .name = "cap privileged_callable [00000000-0000-0000-0000-000000000000]System.ModuleHelper::log_info" }),
     false => @extern(LogSig, .{ .name = "cap callable [00000000-0000-0000-0000-000000000000]System.ModuleHelper::log_info" }),
@@ -25,6 +25,10 @@ pub const log_warn: LogSig = switch (module_config.builtin) {
 pub const log_err: LogSig = switch (module_config.builtin) {
     true => @extern(LogSig, .{ .name = "cap privileged_callable [00000000-0000-0000-0000-000000000000]System.ModuleHelper::log_err" }),
     false => @extern(LogSig, .{ .name = "cap callable [00000000-0000-0000-0000-000000000000]System.ModuleHelper::log_err" }),
+};
+pub const log_raw: LogSig = switch (module_config.builtin) {
+    true => @extern(LogSig, .{ .name = "cap privileged_callable [00000000-0000-0000-0000-000000000000]System.ModuleHelper::log_raw" }),
+    false => @extern(LogSig, .{ .name = "cap callable [00000000-0000-0000-0000-000000000000]System.ModuleHelper::log_raw" }),
 };
 
 extern fn @"Anthragon:buildin_register_capability_callable"(module_uuid: Guid, namespace: [*:0]const u8, symbol: [*:0]const u8, pointer: *const anyopaque) callconv(.c) void;

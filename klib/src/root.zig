@@ -13,6 +13,8 @@ pub const Toml = kernel.Toml;
 pub const units = kernel.utils.units;
 
 pub const mem = @import("mem.zig");
+pub const debug = @import("debug.zig");
+pub const devices = @import("devices.zig");
 
 pub const register_cap_call = core.buildin_register_capability_callable;
 
@@ -27,15 +29,14 @@ fn log(
     comptime format: []const u8,
     args: anytype,
 ) void {
-    const str = std.fmt.allocPrintSentinel(mem.allocator(), format, args, 0) catch unreachable;
+    const str = std.fmt.allocPrint(mem.allocator(), format, args) catch unreachable;
+    defer mem.allocator().free(str);
     const scopestr: [*:0]const u8 = @tagName(scope);
 
     switch (message_level) {
-        .info => core.log_info(module_uuid, scopestr, str.ptr),
-        .debug => core.log_debug(module_uuid, scopestr, str.ptr),
-        .err => core.log_err(module_uuid, scopestr, str.ptr),
-        .warn => core.log_warn(module_uuid, scopestr, str.ptr),
+        .info => core.log_info(module_uuid, scopestr, str.ptr, str.len),
+        .debug => core.log_debug(module_uuid, scopestr, str.ptr, str.len),
+        .err => core.log_err(module_uuid, scopestr, str.ptr, str.len),
+        .warn => core.log_warn(module_uuid, scopestr, str.ptr, str.len),
     }
-
-    mem.allocator().free(str);
 }

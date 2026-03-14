@@ -95,30 +95,3 @@ export fn @"cap privileged_callable [0ab98143-4f24-4e66-8c82-bed8cac47a21]Device
         log.info("{X:0>2}:{X:0>2}.{X:0>1} [{X:0>2}:{X:0>2}] {s}: [{X:0>4}] {s} - [{X:0>4}] {s}", .{ i.get_bus(), i.get_device(), i.get_function(), i.addr.base_class().read(), i.addr.sub_class().read(), i.type_str, i.addr.vendor_id().read(), i.vendor_str, i.addr.device_id().read(), i.name_str });
     }
 }
-
-pub const RegisterDeviceInfo = extern struct {
-    id: usize = 0,
-    name: [*:0]const u8,
-    identifier: Guid,
-    specifier: usize,
-    interface: Guid,
-    flags: packed struct(u8) {
-        canSee: u1,
-        canReed: u1,
-        canWrite: u1,
-
-        _rsvd: u5 = 0,
-    },
-    status: enum(usize) {
-        failed = 0,
-        unset,
-
-        unbinded,
-        working,
-    } = .unset,
-};
-const RegisterDevicesSig = *const fn (deviceInfoPtr: [*]RegisterDeviceInfo, deviceInfoCount: usize) callconv(.c) Result(void);
-pub const register_devices: RegisterDevicesSig = @extern(
-    ?RegisterDevicesSig,
-    .{ .name = "cap privileged_callable [00000000-0000-0000-0000-000000000000]Devices::register" },
-) orelse @panic("Linking error");

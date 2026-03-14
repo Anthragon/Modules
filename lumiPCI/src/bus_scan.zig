@@ -1,4 +1,5 @@
 const std = @import("std");
+const klib = @import("klib");
 const root = @import("root");
 const ports = root.system.ports;
 const main = @import("main.zig");
@@ -79,7 +80,7 @@ fn function_scan(addr: Addr, list: *DeviceList) !void {
     const new_device = try main.allocator.create(PciDevice);
     errdefer main.allocator.destroy(new_device);
 
-    var deviceInfo: main.RegisterDeviceInfo = .{
+    var deviceInfo: klib.devices.RegisterDeviceInfo = .{
         .name = PciDevice.default_name,
         .identifier = .zero(),
         .specifier = 0,
@@ -90,7 +91,7 @@ fn function_scan(addr: Addr, list: *DeviceList) !void {
             .canWrite = 0,
         },
     };
-    try main.register_devices(@ptrCast(&deviceInfo), 1).asbuiltin();
+    try klib.devices.register(@ptrCast(&deviceInfo), 1);
     new_device.* = .{ .dev_id = deviceInfo.id, .addr = addr };
 
     try list.append(main.allocator, new_device);

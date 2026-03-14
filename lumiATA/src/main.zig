@@ -21,17 +21,24 @@ export const @"6f5b62fb-e787-4344-985d-a54ca856e8d9_module-info" linksection(".k
     .deinit = @ptrCast(&deinit),
 };
 
-const controller = switch(builtin.cpu.arch) {
+const controller = switch (builtin.cpu.arch) {
     .x86_64 => @import("x86_controller.zig"),
-    else => undefined
+    else => undefined,
 };
 pub const Channel = enum { primary, secondary };
 pub const Device = enum { master, slave };
 
+pub const DevInfo = struct {
+    channel: Channel,
+    device: Device,
+    sectorCount: usize,
+};
+pub const AtaIdentify = @import("AtaIdentify.zig").AtaIdentify;
+
 const log = std.log.scoped(.main);
 pub var allocator: std.mem.Allocator = undefined;
 
-var device_status: []bool = .{ false, false, false, false };
+var devices: [4]?DevInfo = .{ null, null, null, null };
 
 pub fn init() callconv(.c) bool {
     klib.module_uuid = module_info.uuid;
@@ -45,25 +52,69 @@ pub fn init() callconv(.c) bool {
 }
 pub fn deinit() callconv(.c) void {}
 
-
 pub fn enumerate_devices() void {
-    var response_buffer: [512]u8 = undefined;
-    
+    var ata_id: AtaIdentify = undefined;
+
     controller.select_channel(.primary);
     if (controller.get_status() != 0xff) {
-        log.info("Found primary channel. Identifing devices...", .{});
-        identify(.primary, .master, &response_buffer) catch log.info("Timeout!", .{});
+        log.debug("Found primary channel. Identifing devices...", .{});
+
+        var res = identify(.primary, .master, &ata_id);
+        if (res) |_| {
+            log.debug("Primary master found", .{});
+            append_device(.primary, .master, &ata_id);
+        } else |_| {}
+
+        res = identify(.primary, .slave, &ata_id);
+        if (res) {
+            log.debug("Primary slave found", .{});
+            append_device(.primary, .slave, &ata_id);
+        } else |_| {}
     }
 
     controller.select_channel(.secondary);
     if (controller.get_status() != 0xff) {
-        log.info("Found secondary channel. Identifing devices...", .{});
-        identify(.secondary, .master, &response_buffer) catch log.info("Timeout!", .{});
+        log.debug("Found secondary channel. Identifing devices...", .{});
+
+        var res = identify(.secondary, .master, &ata_id);
+        if (res) {
+            log.debug("Secondary master found", .{});
+            append_device(.secondary, .master, &ata_id);
+        } else |_| {}
+
+        res = identify(.secondary, .slave, &ata_id);
+        if (res) {
+            log.debug("Secondary slave found", .{});
+            append_device(.secondary, .slave, &ata_id);
+        } else |_| {}
     }
 }
+fn append_device(channel: Channel, device: Device, identifyStruct: *AtaIdentify) void {
+    const devid = getIndex(channel, device);
+    devices[devid] = .{
+        .channel = channel,
+        .device = device,
+        .sectorCount = identifyStruct.sectorCount(),
+    };
 
+    var devInfo = klib.devices.RegisterDeviceInfo{
+        .name = "IDE disk drive",
+        .flags = .{
+            .canReed = 0,
+            .canSee = 1,
+            .canWrite = 0,
+        },
+        .interface = .zero(),
+        .identifier = .fromComptimeString("7246d220-ac0b-4e45-872b-b67e0d84deae"),
+        .specifier = 0x0,
+    };
 
-pub fn identify(channel: Channel, device: Device, buffer: *[512]u8) !void {
+    klib.devices.register(@ptrCast(&devInfo), 1) catch {
+        devices[devid] = null;
+    };
+}
+
+pub fn identify(channel: Channel, device: Device, identifyStruct: *AtaIdentify) !void {
     controller.select_channel(channel);
     controller.select_device(device);
 
@@ -74,10 +125,13 @@ pub fn identify(channel: Channel, device: Device, buffer: *[512]u8) !void {
     if (status == 0) return error.NoResponse;
 
     try controller.wait();
-    controller.read(@as([*]u16, @alignCast(@ptrCast(buffer)))[0..256]);
+    controller.read(&identifyStruct.words);
     controller.flush();
 }
 
+fn getIndex(channel: Channel, device: Device) usize {
+    return std.math.shl(usize, @intFromEnum(channel), 1) + @intFromEnum(device);
+}
 
 pub fn panic(msg: []const u8, _: ?*std.builtin.StackTrace, _: ?usize) noreturn {
     var buf: [128]u8 = undefined;
