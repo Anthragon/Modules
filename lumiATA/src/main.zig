@@ -4,6 +4,7 @@ const builtin = @import("builtin");
 const capabilities = klib.capabilities;
 const Result = klib.Result;
 const Guid = klib.Guid;
+const control = @import("control.zig");
 
 pub const std_options = klib.std_oprions;
 pub var vtable: klib.KernelVTable = .{ .abi_version = 1 };
@@ -36,6 +37,10 @@ pub const DevInfo = struct {
 };
 pub const DevKind = enum { hdd, ssd, odd, unk };
 pub const AtaIdentify = @import("AtaIdentify.zig").AtaIdentify;
+
+pub const devVtable: klib.devices.VTable = .{
+    .control = control.control,
+};
 
 const log = std.log.scoped(.main);
 pub var allocator: std.mem.Allocator = undefined;
@@ -102,7 +107,7 @@ fn append_device(channel: Channel, device: Device, identifyStruct: *AtaIdentify)
         .kind = devkind,
     };
 
-    var devInfo = klib.devices.RegisterDeviceInfo{
+    var devInfo = klib.devices.RegisterInfo{
         .name = switch (devkind) {
             .hdd => "pata-hdd",
             .ssd => "pata-ssd",
@@ -110,13 +115,18 @@ fn append_device(channel: Channel, device: Device, identifyStruct: *AtaIdentify)
             .unk => "pata-unk",
         },
         .flags = .{
-            .canReed = 0,
-            .canSee = 1,
-            .canWrite = 0,
+            .canSee = .user,
+            .canReed = .kernel,
+            .canWrite = .kernel,
         },
         .interface = .zero(),
         .identifier = .fromComptimeString("7246d220-ac0b-4e45-872b-b67e0d84deae"),
         .specifier = 0x0,
+
+        .status = .working,
+
+        .implPointer = &devices[devid],
+        .implVtable = &devVtable,
     };
 
     klib.devices.register(@ptrCast(&devInfo), 1) catch {

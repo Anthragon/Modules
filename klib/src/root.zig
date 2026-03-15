@@ -11,6 +11,7 @@ pub const Result = kernel.interop.Result;
 pub const Guid = kernel.utils.Guid;
 pub const Toml = kernel.Toml;
 pub const units = kernel.utils.units;
+pub const Privilege = kernel.Privilege;
 
 pub const mem = @import("mem.zig");
 pub const debug = @import("debug.zig");

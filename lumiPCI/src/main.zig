@@ -12,6 +12,7 @@ pub const PciDevice = @import("PciDevice.zig");
 pub const DeviceList = std.ArrayList(*PciDevice);
 
 const bus_scan = @import("bus_scan.zig");
+const control = @import("control.zig");
 
 // Module information
 export const @"0ab98143-4f24-4e66-8c82-bed8cac47a21_module-info" linksection(".kernel_modules") = klib.Module{
@@ -25,6 +26,10 @@ export const @"0ab98143-4f24-4e66-8c82-bed8cac47a21_module-info" linksection(".k
     .deinit = @ptrCast(&deinit),
 };
 const module_info = @"0ab98143-4f24-4e66-8c82-bed8cac47a21_module-info";
+
+pub const device_vtable: klib.devices.VTable = .{
+    .control = control.control,
+};
 
 const log = std.log.scoped(.main);
 pub var allocator: std.mem.Allocator = undefined;

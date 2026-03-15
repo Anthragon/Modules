@@ -80,16 +80,18 @@ fn function_scan(addr: Addr, list: *DeviceList) !void {
     const new_device = try main.allocator.create(PciDevice);
     errdefer main.allocator.destroy(new_device);
 
-    var deviceInfo: klib.devices.RegisterDeviceInfo = .{
+    var deviceInfo: klib.devices.RegisterInfo = .{
         .name = PciDevice.default_name,
         .identifier = .zero(),
         .specifier = 0,
         .interface = .fromComptimeString("e2e46cb0-9331-4e9f-92cd-c99a9d603be7"),
         .flags = .{
-            .canSee = 1,
-            .canReed = 0,
-            .canWrite = 0,
+            .canSee = .user,
+            .canReed = .kernel,
+            .canWrite = .kernel,
         },
+        .implPointer = @ptrCast(@alignCast(new_device)),
+        .implVtable = &root.device_vtable,
     };
     try klib.devices.register(@ptrCast(&deviceInfo), 1);
     new_device.* = .{ .dev_id = deviceInfo.id, .addr = addr };
