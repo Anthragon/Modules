@@ -32,7 +32,9 @@ pub const DevInfo = struct {
     channel: Channel,
     device: Device,
     sectorCount: usize,
+    kind: DevKind,
 };
+pub const DevKind = enum { hdd, ssd, odd, unk };
 pub const AtaIdentify = @import("AtaIdentify.zig").AtaIdentify;
 
 const log = std.log.scoped(.main);
@@ -91,14 +93,22 @@ pub fn enumerate_devices() void {
 }
 fn append_device(channel: Channel, device: Device, identifyStruct: *AtaIdentify) void {
     const devid = getIndex(channel, device);
+    const devkind = getKind(identifyStruct);
+
     devices[devid] = .{
         .channel = channel,
         .device = device,
         .sectorCount = identifyStruct.sectorCount(),
+        .kind = devkind,
     };
 
     var devInfo = klib.devices.RegisterDeviceInfo{
-        .name = "IDE disk drive",
+        .name = switch (devkind) {
+            .hdd => "pata-hdd",
+            .ssd => "pata-ssd",
+            .odd => "pata-odd",
+            .unk => "pata-unk",
+        },
         .flags = .{
             .canReed = 0,
             .canSee = 1,
@@ -127,6 +137,11 @@ pub fn identify(channel: Channel, device: Device, identifyStruct: *AtaIdentify) 
     try controller.wait();
     controller.read(&identifyStruct.words);
     controller.flush();
+}
+fn getKind(identifyStruct: *AtaIdentify) DevKind {
+    if (!identifyStruct.isAtapi()) return .odd;
+    if (identifyStruct.isSSD()) return .ssd;
+    return .hdd;
 }
 
 fn getIndex(channel: Channel, device: Device) usize {

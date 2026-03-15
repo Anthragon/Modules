@@ -4,6 +4,14 @@ const std = @import("std");
 pub const AtaIdentify = extern struct {
     words: [256]u16,
 
+    pub fn isAtapi(self: *const AtaIdentify) bool {
+        return (self.words[0] & (1 << 15)) != 0;
+    }
+
+    pub fn isSSD(self: *const AtaIdentify) bool {
+        return self.words[217] == 1;
+    }
+
     pub fn maxSectorsPerDrq(self: *const AtaIdentify) u8 {
         const w47 = self.words[47];
         if ((w47 & 0x8000) == 0) return 0;
