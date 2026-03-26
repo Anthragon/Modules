@@ -1,53 +1,44 @@
 const std = @import("std");
-const core = @import("root").lib;
-const lib = @import("lib");
-const capabilities = core.capabilities;
+const klib = @import("klib");
+
+pub const std_options = klib.std_oprions;
+
+// Module information
+const module_info = @"eb896ec0-46ef-4996-a8ef-c82c4ac9f05f_module-info";
+export const @"eb896ec0-46ef-4996-a8ef-c82c4ac9f05f_module-info" linksection(".kernel_modules") = klib.Module{
+    .name = "lumiDisk",
+    .version = "0.1.0",
+    .author = "lumi2021",
+    .license = "MPL-2.0",
+    .flags = .{ .needs_privilege = true },
+    .uuid = klib.Guid.fromString("eb896ec0-46ef-4996-a8ef-c82c4ac9f05f") catch unreachable,
+    .init = @ptrCast(&init),
+    .deinit = @ptrCast(&deinit),
+};
 
 const log = std.log.scoped(.lumiDisk);
 
-const DiskEntry = core.common.DiskEntry;
-const PartEntry = core.common.PartEntry;
-
-// Module information
-pub const module_name: [*:0]const u8 = "lumiDisk";
-pub const module_version: [*:0]const u8 = "0.1.0";
-pub const module_author: [*:0]const u8 = "lumi2021";
-pub const module_liscence: [*:0]const u8 = "MPL-2.0";
-pub const module_uuid: u128 = @bitCast(core.utils.Guid.fromString("eb896ec0-46ef-4996-a8ef-c82c4ac9f05f") catch unreachable);
-
+const DiskEntry = klib.common.DiskEntry;
+const PartEntry = klib.common.PartEntry;
 
 pub fn init() callconv(.c) bool {
+    klib.module_uuid = module_info.uuid;
     log.info("Hello, lumiDisk!", .{});
 
-    arena = .init(@import("root").mem.heap.kernel_buddy_allocator);
-    allocator = arena.allocator();
+    allocator = klib.mem.allocator();
 
-    const devices_node = capabilities.get_node("Devices") orelse return false;
-    mass_storage_resource = capabilities.create_resource(devices_node, "MassStorage") catch unreachable;
-
-    register_device = @ptrCast(devices_node.branch("register_device").?.data.callable);
-    remove_device = @ptrCast(devices_node.branch("remove_device").?.data.callable);
-
-    _ = capabilities.create_callable(mass_storage_resource, "lsblk", @ptrCast(&lsblk)) catch unreachable;
-    _ = capabilities.create_callable(mass_storage_resource, "append_device", @ptrCast(&append_device)) catch unreachable;
-
-    _ = capabilities.create_callable(mass_storage_resource, "get_disk_by_identifier", @ptrCast(&get_disk_by_identifier)) catch unreachable;
-    _ = capabilities.create_callable(mass_storage_resource, "get_disk_by_identifier_part_by_identifier", @ptrCast(&get_disk_by_identifier_part_by_identifier)) catch unreachable;
-
-    _ = capabilities.create_callable(mass_storage_resource, "DiskEntry__read", @ptrCast(&DiskEntry.c_read)) catch unreachable;
-    _ = capabilities.create_callable(mass_storage_resource, "PartEntry__read", @ptrCast(&PartEntry.c_read)) catch unreachable;
+    log.debug("Registring capabilities...", .{});
+    klib.register_cap_call("Devices.MassStorage", "list", &lsblk);
+    klib.register_cap_call("Devices.MassStorage", "get_disk_by_id", &get_disk_by_id);
+    klib.register_cap_call("Devices.MassStorage", "get_part_by_id", &get_part_by_id);
 
     return true;
 }
-pub fn deinit() callconv(.c) void {
-    arena.deinit();
-}
+pub fn deinit() callconv(.c) void {}
 
-var mass_storage_resource: *capabilities.Node = undefined;
 var register_device: *const fn (devname: [*:0]const u8, identifier: u128, subclass: usize, canSee: usize, canRead: usize, canControl: usize) callconv(.c) void = undefined;
 var remove_device: *const fn (dev: usize) callconv(.c) void = undefined;
 
-var arena: std.heap.ArenaAllocator = undefined;
 var allocator: std.mem.Allocator = undefined;
 
 var disk_list: std.ArrayListUnmanaged(*DiskEntry) = .empty;
@@ -74,7 +65,8 @@ fn append_device(
     scan_disk(entry);
 }
 
-fn get_disk_by_identifier(ident: [*:0]const u8) callconv(.c) ?*DiskEntry {
+const get_disk_by_id = @"cap privileged_callable [0eb896ec0-46ef-4996-a8ef-c82c4ac9f05f_module-info]Devices.MassStorage::get_disk_by_id";
+export fn @"cap privileged_callable [0eb896ec0-46ef-4996-a8ef-c82c4ac9f05f_module-info]Devices.MassStorage::get_disk_by_id"(ident: [*:0]const u8) callconv(.c) ?*DiskEntry {
     const identifier = std.mem.sliceTo(ident, 0);
 
     for (disk_list.items) |disk| {
@@ -82,8 +74,10 @@ fn get_disk_by_identifier(ident: [*:0]const u8) callconv(.c) ?*DiskEntry {
     }
     return null;
 }
-fn get_disk_by_identifier_part_by_identifier(disk_ident: [*:0]const u8, part_ident: [*:0]const u8) callconv(.c) ?*PartEntry {
-    const disk = get_disk_by_identifier(disk_ident) orelse return null;
+
+const get_part_by_id = @"cap privileged_callable [0eb896ec0-46ef-4996-a8ef-c82c4ac9f05f_module-info]Devices.MassStorage::get_part_by_id";
+fn @"cap privileged_callable [0eb896ec0-46ef-4996-a8ef-c82c4ac9f05f_module-info]Devices.MassStorage::get_part_by_id"(disk_ident: [*:0]const u8, part_ident: [*:0]const u8) callconv(.c) ?*PartEntry {
+    const disk = get_disk_by_id(disk_ident) orelse return null;
     const parts = disk.partitions[0..disk.partitions_length];
 
     const identifier = std.mem.sliceTo(part_ident, 0);
@@ -117,16 +111,17 @@ fn scan_disk(disk_entry: *DiskEntry) void {
     }
 }
 
-fn lsblk() callconv(.c) void {
+const lsblk = @"cap privileged_callable [0eb896ec0-46ef-4996-a8ef-c82c4ac9f05f_module-info]Devices.MassStorage::lsblk";
+export fn @"cap privileged_callable [0eb896ec0-46ef-4996-a8ef-c82c4ac9f05f_module-info]Devices.MassStorage::lsblk"() callconv(.c) void {
     log.warn("lsblk", .{});
 
     for (disk_list.items) |i| {
-        const ds = core.utils.units.calc(i.sectors_length * 512, &core.utils.units.data);
+        const ds = klib.units.calc(i.sectors_length * 512, &klib.units.data);
         log.info("{s: <15} Disk    {d: >5.2} {s: <6} {s}", .{ i.type, ds.@"0", ds.@"1", i.global_identifier orelse "--" });
 
         for (0..i.partitions_length) |j| {
             const p = i.partitions[j];
-            const ps = core.utils.units.calc((p.end_sector - p.start_sector) * 512, &core.utils.units.data);
+            const ps = klib.units.calc((p.end_sector - p.start_sector) * 512, &klib.units.data);
             log.info("   {s: <12} Part    {d: >5.2} {s: <6} {s}", .{ p.readable_name, ps.@"0", ps.@"1", p.global_identifier orelse "--" });
         }
     }

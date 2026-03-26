@@ -7,7 +7,6 @@ const Guid = klib.Guid;
 const control = @import("control.zig");
 
 pub const std_options = klib.std_oprions;
-pub var vtable: klib.KernelVTable = .{ .abi_version = 1 };
 
 // Module information
 const module_info = @"6f5b62fb-e787-4344-985d-a54ca856e8d9_module-info";
@@ -52,9 +51,7 @@ pub fn init() callconv(.c) bool {
     log.info("Hello, lumiATA!", .{});
 
     allocator = klib.mem.allocator();
-
     enumerate_devices();
-
     return true;
 }
 pub fn deinit() callconv(.c) void {}
@@ -107,21 +104,23 @@ fn append_device(channel: Channel, device: Device, identifyStruct: *AtaIdentify)
         .kind = devkind,
     };
 
+    const name: [:0]const u8, const specifier: usize = switch (devkind) {
+        .hdd => .{ "pata-hdd", 0x1 },
+        .ssd => .{ "pata-ssd", 0x2 },
+        .odd => .{ "pata-odd", 0x3 },
+        .unk => .{ "pata-unk", 0x0 },
+    };
+
     var devInfo = klib.devices.RegisterInfo{
-        .name = switch (devkind) {
-            .hdd => "pata-hdd",
-            .ssd => "pata-ssd",
-            .odd => "pata-odd",
-            .unk => "pata-unk",
-        },
+        .name = name,
         .flags = .{
             .canSee = .user,
             .canReed = .kernel,
             .canWrite = .kernel,
         },
-        .interface = .zero(),
+        .interface = .fromComptimeString("cd381109-e932-4c55-a230-9bb8521d580b"),
         .identifier = .fromComptimeString("7246d220-ac0b-4e45-872b-b67e0d84deae"),
-        .specifier = 0x0,
+        .specifier = specifier,
 
         .status = .working,
 

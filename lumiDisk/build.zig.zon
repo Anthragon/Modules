@@ -3,7 +3,9 @@
     .version = "0.0.0",
     .fingerprint = 0xf17c318950e795e8,
 
-    .dependencies = .{},
+    .dependencies = .{
+        .klib = .{ .path = "../klib" },
+    },
 
     .paths = .{
         "build.zig",
