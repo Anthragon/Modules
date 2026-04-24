@@ -42,8 +42,17 @@ pub fn build(b: *std.Build) void {
         .target = target,
         .optimize = optimize,
         .single_threaded = true,
-        .code_model = .kernel,
     });
+
+    switch (target_arch) {
+        .x86_64 => {
+            core.code_model = .kernel;
+        },
+        .aarch64 => {
+            core.code_model = .large;
+        },
+        else => undefined,
+    }
 
     core.addImport("klib", klib);
 }

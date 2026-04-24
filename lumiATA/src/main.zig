@@ -118,8 +118,8 @@ fn append_device(channel: Channel, device: Device, identifyStruct: *AtaIdentify)
             .canReed = .kernel,
             .canWrite = .kernel,
         },
-        .interface = .fromComptimeString("cd381109-e932-4c55-a230-9bb8521d580b"),
-        .identifier = .fromComptimeString("7246d220-ac0b-4e45-872b-b67e0d84deae"),
+        .interface = .fromComptimeString("cd381109-e932-4c55-a230-9bb8521d580b"), // ata
+        .identifier = .fromComptimeString("7246d220-ac0b-4e45-872b-b67e0d84deae"), // block device
         .specifier = specifier,
 
         .status = .working,

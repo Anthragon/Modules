@@ -92,8 +92,8 @@ fn @"cap privileged_event_unbind [0ab98143-4f24-4e66-8c82-bed8cac47a21]Devices.P
     _ = callback;
 }
 
-const lspci = @"cap privileged_callable [0ab98143-4f24-4e66-8c82-bed8cac47a21]Devices.PCI::lspci";
-export fn @"cap privileged_callable [0ab98143-4f24-4e66-8c82-bed8cac47a21]Devices.PCI::lspci"() callconv(.c) void {
+const lspci = @"cap [0ab98143-4f24-4e66-8c82-bed8cac47a21] PC Devices.PCI::lspci";
+export fn @"cap [0ab98143-4f24-4e66-8c82-bed8cac47a21] PC Devices.PCI::lspci"() callconv(.c) void {
     log.warn("lspci", .{});
 
     for (dev_list.items) |i| {

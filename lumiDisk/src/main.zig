@@ -32,6 +32,8 @@ pub fn init() callconv(.c) bool {
     klib.register_cap_call("Devices.MassStorage", "get_disk_by_id", &get_disk_by_id);
     klib.register_cap_call("Devices.MassStorage", "get_part_by_id", &get_part_by_id);
 
+    enumerate_devices();
+
     return true;
 }
 pub fn deinit() callconv(.c) void {}
@@ -42,6 +44,22 @@ var remove_device: *const fn (dev: usize) callconv(.c) void = undefined;
 var allocator: std.mem.Allocator = undefined;
 
 var disk_list: std.ArrayListUnmanaged(*DiskEntry) = .empty;
+
+fn enumerate_devices() void {
+    var devinfo: ?*const klib.devices.Device = null;
+
+    while (foreach_blk(&devinfo) catch false) {
+        log.info("{f}", .{devinfo.?});
+    }
+}
+fn foreach_blk(devinfo: *?*const klib.devices.Device) !bool {
+    return try klib.devices.foreach_devices(
+        devinfo,
+        klib.Guid.fromComptimeString("7246d220-ac0b-4e45-872b-b67e0d84deae"),
+        0,
+        .zero(),
+    );
+}
 
 fn append_device(
     ctx: *anyopaque,
@@ -65,8 +83,8 @@ fn append_device(
     scan_disk(entry);
 }
 
-const get_disk_by_id = @"cap privileged_callable [0eb896ec0-46ef-4996-a8ef-c82c4ac9f05f_module-info]Devices.MassStorage::get_disk_by_id";
-export fn @"cap privileged_callable [0eb896ec0-46ef-4996-a8ef-c82c4ac9f05f_module-info]Devices.MassStorage::get_disk_by_id"(ident: [*:0]const u8) callconv(.c) ?*DiskEntry {
+const get_disk_by_id = @"cap [0eb896ec0-46ef-4996-a8ef-c82c4ac9f05f] PC Devices.MassStorage::get_disk_by_id";
+export fn @"cap [0eb896ec0-46ef-4996-a8ef-c82c4ac9f05f] PC Devices.MassStorage::get_disk_by_id"(ident: [*:0]const u8) callconv(.c) ?*DiskEntry {
     const identifier = std.mem.sliceTo(ident, 0);
 
     for (disk_list.items) |disk| {
@@ -75,8 +93,8 @@ export fn @"cap privileged_callable [0eb896ec0-46ef-4996-a8ef-c82c4ac9f05f_modul
     return null;
 }
 
-const get_part_by_id = @"cap privileged_callable [0eb896ec0-46ef-4996-a8ef-c82c4ac9f05f_module-info]Devices.MassStorage::get_part_by_id";
-fn @"cap privileged_callable [0eb896ec0-46ef-4996-a8ef-c82c4ac9f05f_module-info]Devices.MassStorage::get_part_by_id"(disk_ident: [*:0]const u8, part_ident: [*:0]const u8) callconv(.c) ?*PartEntry {
+const get_part_by_id = @"cap [0eb896ec0-46ef-4996-a8ef-c82c4ac9f05f] PC Devices.MassStorage::get_part_by_id";
+fn @"cap [0eb896ec0-46ef-4996-a8ef-c82c4ac9f05f] PC Devices.MassStorage::get_part_by_id"(disk_ident: [*:0]const u8, part_ident: [*:0]const u8) callconv(.c) ?*PartEntry {
     const disk = get_disk_by_id(disk_ident) orelse return null;
     const parts = disk.partitions[0..disk.partitions_length];
 
@@ -111,8 +129,8 @@ fn scan_disk(disk_entry: *DiskEntry) void {
     }
 }
 
-const lsblk = @"cap privileged_callable [0eb896ec0-46ef-4996-a8ef-c82c4ac9f05f_module-info]Devices.MassStorage::lsblk";
-export fn @"cap privileged_callable [0eb896ec0-46ef-4996-a8ef-c82c4ac9f05f_module-info]Devices.MassStorage::lsblk"() callconv(.c) void {
+const lsblk = @"cap [0eb896ec0-46ef-4996-a8ef-c82c4ac9f05f] PC Devices.MassStorage::lsblk";
+export fn @"cap [0eb896ec0-46ef-4996-a8ef-c82c4ac9f05f] PC Devices.MassStorage::lsblk"() callconv(.c) void {
     log.warn("lsblk", .{});
 
     for (disk_list.items) |i| {
